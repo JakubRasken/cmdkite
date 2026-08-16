@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { CmdRunner, type RunOptions } from "./runner.ts"
+import { serverConnectedEvent, toEvents, toSessionInfo, toSessionsResponse } from "./compat.ts"
 
 const PORT = Number(process.env.CMDKITE_PORT ?? 41414)
 const HOST = process.env.CMDKITE_HOST ?? "127.0.0.1"
@@ -26,6 +27,45 @@ export function createApp(runner: CmdRunner) {
     try {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`)
       const path = url.pathname
+
+      if (req.method === "GET" && path === "/api/health") {
+        sendJson(res, 200, { ok: true })
+        return
+      }
+
+      if (req.method === "GET" && path === "/api/session") {
+        sendJson(res, 200, toSessionsResponse(runner.list()))
+        return
+      }
+
+      if (req.method === "POST" && path === "/api/session") {
+        const body = JSON.parse(await readBody(req)) as { title?: string; model?: string; location?: { directory?: string } }
+        const cwd = body.location?.directory ?? process.cwd()
+        // Creating a session eagerly runs a trivial first prompt so a sessionId exists.
+        const session = runner.start({ cwd, prompt: body.title ?? "start" })
+        sendJson(res, 200, { data: toSessionInfo(session) })
+        return
+      }
+
+      if (req.method === "GET" && path === "/api/model") {
+        sendJson(res, 200, { data: [{ id: "default", name: "Default" }] })
+        return
+      }
+
+      if (req.method === "GET" && path === "/api/event") {
+        res.writeHead(200, {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache, no-transform",
+          connection: "keep-alive",
+        })
+        const send = (event: unknown) => res.write(`data: ${JSON.stringify(event)}\n\n`)
+        send(serverConnectedEvent())
+        const unsubscribe = runner.onFrame((session, _frame) => {
+          for (const event of toEvents(session, session.sessionId)) send(event)
+        })
+        req.on("close", unsubscribe)
+        return
+      }
 
       if (req.method === "GET" && path === "/api/status") {
         sendJson(res, 200, { ok: true, cli: runner.getCli(), sessions: runner.list().length })

@@ -25,6 +25,7 @@ import {
 } from "./onboarding"
 import { getDefaultServerUrl, preferAppEnv, setDefaultServerUrl } from "./server"
 import { registerUpdaterIpc, setupAutoUpdater, showUpdaterDialog } from "./updater"
+import { startCmkDaemon, type DaemonHandle } from "./daemon"
 import { safeWebContentsURL } from "./window-state"
 import {
   getLastFocusedWindow,
@@ -38,7 +39,6 @@ import {
 import { registerWslIpcHandlers } from "./wsl/ipc"
 import { migrate } from "./migrate"
 import { cleanupStoreFiles } from "./store-cleanup"
-import { startBackgroundCli } from "./background-cli"
 import { setNativeTranslations } from "./native-translations"
 
 const APP_NAMES: Record<string, string> = {
@@ -132,6 +132,7 @@ const main = Effect.gen(function* () {
   initCrashReporter()
 
   let stopWslServers = async () => {}
+  let stopDaemon: (() => Promise<void>) | undefined
   const relaunch = () => {
     setAppQuitting()
     void stopWslServers().finally(() => {
@@ -245,7 +246,7 @@ const main = Effect.gen(function* () {
     relaunch,
   }
   registerIpcHandlers({
-    killSidecar: () => undefined,
+    killSidecar: () => stopDaemon?.() ?? undefined,
     relaunch,
     awaitInitialization: Effect.fnUntraced(
       function* () {
@@ -291,8 +292,9 @@ const main = Effect.gen(function* () {
     ensureLoopbackNoProxy()
     useEnvProxy()
 
-    logger.log("starting v2 background service")
-    const background = yield* Effect.promise(() => startBackgroundCli(logger))
+    logger.log("starting cmdkite harness daemon")
+    const background = yield* Effect.promise(() => startCmkDaemon(logger))
+    stopDaemon = background.stop
     stopWslServers = yield* Effect.promise(() => startWslServers(background))
 
     yield* Deferred.succeed(serverReady, {
@@ -319,7 +321,7 @@ const main = Effect.gen(function* () {
   if (windows.length) createMenu(menuDeps)
 })
 
-async function startWslServers(cli: { version: string; wslBuild?: { script: string; output: string } }) {
+async function startWslServers(cli: { url: string }) {
   if (process.platform !== "win32") {
     registerWslIpcHandlers()
     return async () => {}
@@ -327,19 +329,9 @@ async function startWslServers(cli: { version: string; wslBuild?: { script: stri
 
   const { createWslServersController } = await import("./wsl/servers")
   const { spawnWslSidecar } = await import("./wsl/sidecar")
-  const local = cli.wslBuild
   const controller = createWslServersController({
-    cli: { version: cli.version },
-    installCli: local
-      ? async (distro) => {
-          const { buildLocalWslCli } = await import("./wsl/local")
-          const { installWslCli } = await import("./wsl/runtime")
-          await installWslCli(distro, {
-            version: cli.version,
-            binary: await buildLocalWslCli({ ...local, version: cli.version }),
-          })
-        }
-      : undefined,
+    cli: { version: "cmdkite" },
+    installCli: undefined,
     spawnSidecar: async (distro) => {
       logger.log("spawning wsl sidecar", { distro })
       return spawnWslSidecar(distro, {
