@@ -44,18 +44,27 @@ export function NewSessionView(props: {
     <div class="@container relative flex flex-col min-h-0 h-full flex-1">
       <div
         data-component="session-new-design"
+        data-background-surface="shell"
         class="relative flex-1 min-h-0 overflow-hidden rounded-[10px] bg-v2-background-bg-deep"
       >
         <div class="absolute inset-x-0 top-[25.375%] flex justify-center px-6">
           <div class={NEW_SESSION_CONTENT_WIDTH}>
-            <WordmarkV2 class="h-auto w-full text-v2-background-bg-inverse" />
+            <WordmarkV2 class="h-auto w-full text-v2-background-bg-inverse [&>g>g>g]:!opacity-[0.45]" />
             <div class="mt-8 flex flex-col gap-8">
               <PromptInputV2Composer controller={props.input} accentSubmit={props.workspace.selection.workspace()} />
               <Show when={props.project.empty()}>
                 <PromptProjectAddButton controller={props.project} />
               </Show>
               <Show when={props.project.selected()}>
-                <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-0 text-v2-text-text-faint sm:flex-row">
+                <div
+                  data-background-surface={props.workspace.bar.visible() ? "workspace-bar" : undefined}
+                  class="flex min-h-7 min-w-0 items-center gap-0 text-v2-text-text-faint"
+                  classList={{
+                    "flex-col justify-center sm:flex-row": props.workspace.bar.visible(),
+                    "w-fit max-w-full self-center": props.workspace.bar.visible(),
+                    "justify-start": !props.workspace.bar.visible(),
+                  }}
+                >
                   <PromptProjectSelector controller={props.project} placement="bottom" />
                   <Show
                     when={props.workspace.bar.visible()}

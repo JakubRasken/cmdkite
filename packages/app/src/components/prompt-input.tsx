@@ -1459,6 +1459,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         t={(key) => language.t(key as Parameters<typeof language.t>[0])}
       />
       <DockShellForm
+        data-component={newSession() ? "session-new-composer" : "session-composer"}
+        data-background-surface="prompt"
         data-dock-border-underlay="legacy"
         onSubmit={handleSubmit}
         classList={{

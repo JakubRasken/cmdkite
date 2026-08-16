@@ -38,11 +38,18 @@ export function assertAttachmentBudget(files: { size: number }[]) {
 }
 
 export async function readAttachment(filePath: string, maxBytes = MAX_ATTACHMENT_BYTES) {
+  return readBoundedFile(
+    filePath,
+    maxBytes,
+    nativeT("desktop.picker.error.sizeLimit", { limit: MAX_ATTACHMENT_BYTES / 1024 / 1024 }),
+  )
+}
+
+export async function readBoundedFile(filePath: string, maxBytes: number, message: string) {
   const file = await open(filePath, "r")
   try {
     const info = await file.stat()
-    if (info.size > maxBytes)
-      throw new Error(nativeT("desktop.picker.error.sizeLimit", { limit: MAX_ATTACHMENT_BYTES / 1024 / 1024 }))
+    if (info.size > maxBytes) throw new Error(message)
     const bytes = Buffer.allocUnsafe(info.size)
     let offset = 0
     while (offset < info.size) {

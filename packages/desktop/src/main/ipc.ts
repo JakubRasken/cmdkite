@@ -10,6 +10,12 @@ import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../prel
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { setForceFocus } from "./debug"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
+import {
+  backgroundImageExtensions,
+  clearBackgroundImage,
+  findBackgroundImage,
+  saveBackgroundImage,
+} from "./background-image"
 import { getStore, removeStoreFileIfEmpty } from "./store"
 import {
   getPinchZoomEnabled,
@@ -76,6 +82,29 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("check-app-exists", (_event: IpcMainInvokeEvent, appName: string) => deps.checkAppExists(appName))
   ipcMain.handle("resolve-app-path", (_event: IpcMainInvokeEvent, appName: string) => deps.resolveAppPath(appName))
   ipcMain.handle("set-background-color", (_event: IpcMainInvokeEvent, color: string) => deps.setBackgroundColor(color))
+  const backgroundImageState = async () => {
+    const image = await findBackgroundImage(app.getPath("userData"))
+    return image ? { revision: image.revision } : null
+  }
+  const publishBackgroundImage = (state: { revision: string } | null) => {
+    BrowserWindow.getAllWindows().forEach((win) => win.webContents.send("background-image-changed", state))
+    return state
+  }
+  ipcMain.handle("load-background-image", backgroundImageState)
+  ipcMain.handle("select-background-image", async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openFile"],
+      title: "Choose a background image",
+      filters: [{ name: "Images", extensions: backgroundImageExtensions }],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    await saveBackgroundImage(app.getPath("userData"), result.filePaths[0])
+    return publishBackgroundImage(await backgroundImageState())
+  })
+  ipcMain.handle("clear-background-image", async () => {
+    await clearBackgroundImage(app.getPath("userData"))
+    publishBackgroundImage(null)
+  })
   ipcMain.handle("export-debug-logs", () => deps.exportDebugLogs())
   ipcMain.handle("set-force-focus", (event: IpcMainInvokeEvent, enabled: boolean) =>
     setForceFocus(event.sender, enabled),

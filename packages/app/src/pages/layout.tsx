@@ -25,6 +25,7 @@ export default function Layout(props: ParentProps) {
 
   return (
     <div
+      data-background-surface="shell"
       class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text"
       style={{
         "padding-top": "env(safe-area-inset-top, 0px)",
@@ -39,7 +40,10 @@ export default function Layout(props: ParentProps) {
             : undefined
         }
       />
-      <main class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict">
+      <main
+        data-background-surface="content"
+        class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict"
+      >
         <Suspense>{props.children}</Suspense>
       </main>
       <Show when={import.meta.env.DEV && state.debugTools}>

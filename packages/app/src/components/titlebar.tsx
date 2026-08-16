@@ -153,6 +153,7 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
 
   return (
     <header
+      data-background-surface="shell"
       data-slot={useV2Titlebar() ? "titlebar-v2" : undefined}
       classList={{
         "shrink-0 relative flex flex-row": true,

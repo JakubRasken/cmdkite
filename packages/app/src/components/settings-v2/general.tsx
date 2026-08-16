@@ -25,6 +25,7 @@ import {
 } from "./general-controllers"
 import "./settings-v2.css"
 import { ServerConnection } from "@/context/servers"
+import { useSettingsBackgroundImage } from "../settings-background-image"
 
 const schemeOptions: ("system" | "light" | "dark")[] = ["system", "light", "dark"]
 const fontSettings = {
@@ -304,6 +305,7 @@ export const SettingsGeneral: Component<{
 }> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
+  const backgroundImage = useSettingsBackgroundImage()
   const settings = useSettings()
   const mobile = createMediaQuery("(max-width: 767px)")
   const updater = useUpdaterAction()
@@ -523,6 +525,29 @@ export const SettingsGeneral: Component<{
               <Switch checked={pinchZoom.latest} onChange={onPinchZoomChange} />
             </div>
           </SettingsRowV2>
+
+          <Show when={backgroundImage.available}>
+            <SettingsRowV2
+              title={language.t("settings.general.row.backgroundImage.title")}
+              description={language.t("settings.general.row.backgroundImage.description")}
+            >
+              <div class="flex items-center gap-2">
+                <ButtonV2
+                  size="normal"
+                  variant="neutral"
+                  disabled={backgroundImage.busy}
+                  onClick={backgroundImage.select}
+                >
+                  {language.t("settings.general.row.backgroundImage.choose")}
+                </ButtonV2>
+                <Show when={backgroundImage.active()}>
+                  <ButtonV2 size="normal" variant="ghost" disabled={backgroundImage.busy} onClick={backgroundImage.clear}>
+                    {language.t("settings.general.row.backgroundImage.remove")}
+                  </ButtonV2>
+                </Show>
+              </div>
+            </SettingsRowV2>
+          </Show>
         </SettingsListV2>
       </div>
     </Show>

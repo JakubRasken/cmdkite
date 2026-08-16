@@ -42,6 +42,10 @@ export type FatalRendererError = {
   os?: string
 }
 
+export type BackgroundImage = {
+  revision: string
+}
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   awaitInitialization: () => Promise<ServerReadyData>
@@ -108,6 +112,10 @@ export type ElectronAPI = {
   setTitlebar: (theme: TitlebarTheme) => Promise<void>
   runDesktopMenuAction: (action: DesktopMenuAction) => Promise<void>
   setBackgroundColor: (color: string) => Promise<void>
+  loadBackgroundImage: () => Promise<BackgroundImage | null>
+  selectBackgroundImage: () => Promise<BackgroundImage | null>
+  clearBackgroundImage: () => Promise<void>
+  onBackgroundImageChanged: (cb: (image: BackgroundImage | null) => void) => () => void
   exportDebugLogs: () => Promise<string>
   setForceFocus: (enabled: boolean) => Promise<void>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>

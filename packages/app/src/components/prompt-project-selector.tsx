@@ -444,6 +444,7 @@ export function PromptProjectAddButton(props: { controller: PromptProjectControl
   return (
     <button
       data-action="prompt-project"
+      data-background-surface="project-selector"
       type="button"
       class="flex h-7 min-w-0 max-w-[160px] items-center gap-1.5 rounded-sm px-2 text-[13px] font-[440] leading-5 tracking-[-0.04px] text-v2-text-text-faint transition-colors hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
       onClick={() => props.controller.add()}
@@ -462,6 +463,7 @@ function ProjectTrigger(props: ComponentProps<"button"> & { controller: PromptPr
     <button
       {...rest}
       data-action="prompt-project"
+      data-background-surface="project-selector"
       type="button"
       class="flex h-7 min-w-0 max-w-[203px] items-center gap-1.5 rounded-sm px-1.5 transition-colors focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
       classList={{
