@@ -1,0 +1,4 @@
+.blume/
+dist/
+node_modules/
+.blume-verify/
