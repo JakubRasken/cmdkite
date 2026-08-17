@@ -221,7 +221,7 @@ function warmSessions(input: {
   setStore: SetStoreFunction<State>
   api: SessionApi
 }) {
-  const known = new Set(input.store.session.map((item) => item.id))
+  const known = new Set((input.store.session ?? []).map((item) => item.id))
   const ids = [...new Set(input.ids)].filter((id) => !!id && !known.has(id))
   if (ids.length === 0) return Promise.resolve()
   return Promise.all(

@@ -286,7 +286,9 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       const all: CommandOption[] = []
 
       for (const reg of activeCommandRegistrations(store.registrations)) {
-        for (const opt of reg.options()) {
+        const opts = reg.options()
+        if (!opts || typeof opts[Symbol.iterator] !== "function") continue
+        for (const opt of opts) {
           if (seen.has(opt.id)) {
             if (import.meta.env.DEV && !warnedDuplicates.has(opt.id)) {
               warnedDuplicates.add(opt.id)
