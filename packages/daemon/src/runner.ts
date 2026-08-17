@@ -21,7 +21,7 @@ export type RunOptions = {
   maxTurns?: number
 }
 
-export type SessionState = "running" | "done" | "error"
+export type SessionState = "idle" | "running" | "done" | "error"
 
 export interface Session {
   id: string
@@ -67,18 +67,43 @@ export class CmdRunner {
     return () => this.listeners.delete(listener)
   }
 
-  start(opts: RunOptions): Session {
-    const id = randomUUID()
+  /** Register an idle session (no CLI run yet). The app creates sessions before prompting. */
+  create(opts: Pick<RunOptions, "cwd" | "prompt"> & { id?: string }): Session {
+    const id = opts.id ?? randomUUID()
     const session: Session = {
       id,
-      state: "running",
+      state: "idle",
       cwd: opts.cwd,
       prompt: opts.prompt,
       createdAt: Date.now(),
     }
     this.sessions.set(id, session)
     this.trimOld()
+    return session
+  }
 
+  /** Start a CLI run for an existing session. Returns false if the session is unknown. */
+  prompt(id: string, opts: Omit<RunOptions, "cwd" | "prompt"> & { prompt: string }): boolean {
+    const session = this.sessions.get(id)
+    if (!session) return false
+    session.state = "running"
+    session.prompt = opts.prompt
+    this.emit(id, session)
+    this.spawnRun(id, opts)
+    return true
+  }
+
+  /** Start a CLI run for a new session (legacy path: creates then runs). */
+  start(opts: RunOptions): Session {
+    const session = this.create({ cwd: opts.cwd, prompt: opts.prompt })
+    session.state = "running"
+    this.spawnRun(session.id, opts)
+    return session
+  }
+
+  private spawnRun(id: string, opts: Omit<RunOptions, "cwd">): void {
+    const session = this.sessions.get(id)
+    if (!session) return
     const args: string[] = ["-p", opts.prompt, "--output-format", "json", "--skip-onboarding", "--trust"]
     if (opts.continue) args.push("--continue")
     else if (opts.resume) args.push("--resume", opts.resume)
@@ -90,7 +115,7 @@ export class CmdRunner {
     for (const [key, value] of Object.entries(opts.config ?? {})) args.push("--config", `${key}=${value}`)
 
     const child = spawn(this.cli, args, {
-      cwd: opts.cwd,
+      cwd: session.cwd,
       env: { ...process.env, NO_COLOR: "1" },
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
@@ -127,8 +152,6 @@ export class CmdRunner {
         this.emit(id, current)
       }
     })
-
-    return session
   }
 
   private applyFrame(id: string, frame: Frame): void {

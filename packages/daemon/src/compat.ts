@@ -27,6 +27,7 @@ export type SessionMessage = {
 
 export type V2Event = {
   id: string
+  created: number
   type: string
   location?: LocationRef
   data: Record<string, unknown>
@@ -37,13 +38,20 @@ export type SessionsResponse = {
   cursor: { previous?: string | null; next?: string | null }
 }
 
+/** Stamp the common wire-event fields (id/created/type/location/data). */
+function event(id: string, type: string, location: LocationRef, data: Record<string, unknown>): V2Event {
+  return { id, created: Date.now(), type, location, data }
+}
+
 export function locationOf(session: Session): LocationRef {
   return { directory: session.cwd }
 }
 
 export function toSessionInfo(session: Session): SessionInfo {
   return {
-    id: session.sessionId ?? session.id,
+    // The daemon's UUID is the stable app-facing session id. The CLI's own
+    // sessionId (from the result frame) is kept for --resume, not surfaced.
+    id: session.id,
     projectID: "local",
     cost: { amount: 0, currency: "USD" },
     tokens: {},
@@ -57,84 +65,79 @@ export function toSessionsResponse(sessions: Session[]): SessionsResponse {
   return { data: sessions.map(toSessionInfo), cursor: { previous: null, next: null } }
 }
 
-/** Build the event list emitted for a run (OpenCode-compatible shapes). */
-export function toEvents(session: Session, cmdSessionId: string | undefined): V2Event[] {
+/** Events emitted as soon as a run starts: session created + the user's inbox message. */
+export function toStartEvents(session: Session): V2Event[] {
   const location = locationOf(session)
-  const now = Date.now()
+  const sessionID = session.id
+  const userMessageID = `user-${session.id}`
+  const inboxID = `inbox-${session.id}`
+  return [
+    event(`created-${session.id}`, "session.created", location, {
+      sessionID,
+      info: toSessionInfo(session),
+    }),
+    event(`inbox-enqueued-${session.id}`, "session.inbox.enqueued", location, {
+      sessionID,
+      inboxID,
+      item: {
+        id: userMessageID,
+        sessionID,
+        timeCreated: session.createdAt,
+        type: "user",
+        payload: { text: session.prompt },
+        delivery: "steer",
+      },
+    }),
+    event(`inbox-delivered-${session.id}`, "session.inbox.delivered", location, {
+      sessionID,
+      inboxID,
+    }),
+    event(`step-started-${session.id}`, "session.step.started", location, {
+      sessionID,
+      assistantMessageID: `assistant-${session.id}`,
+      agent: "primary",
+    }),
+  ]
+}
+
+/** Build the v2 wire event list emitted for a run (OpenCode-compatible shapes). */
+export function toEvents(session: Session): V2Event[] {
+  const location = locationOf(session)
   const events: V2Event[] = []
-
-  if (cmdSessionId) {
-    events.push({
-      id: `created-${cmdSessionId}`,
-      type: "session.created",
-      location,
-      data: { sessionID: cmdSessionId, info: toSessionInfo({ ...session, sessionId: cmdSessionId }) },
-    })
-  }
-
-  events.push({
-    id: `user-${session.id}`,
-    type: "session.user_message",
-    location,
-    data: {
-      sessionID: cmdSessionId ?? session.id,
-      message: { id: `user-${session.id}`, time: { created: session.createdAt }, type: "user", text: session.prompt },
-    },
-  })
+  const sessionID = session.id
+  const assistantMessageID = `assistant-${session.id}`
 
   if (session.finalText !== undefined) {
-    events.push({
-      id: `text-${session.id}`,
-      type: "session.text.delta",
-      location,
-      data: {
-        sessionID: cmdSessionId ?? session.id,
-        assistantMessageID: `assistant-${session.id}`,
-        ordinal: 0,
-        delta: session.finalText,
-      },
-    })
-    events.push({
-      id: `assistant-${session.id}`,
-      type: "session.updated",
-      location,
-      data: {
-        sessionID: cmdSessionId ?? session.id,
-        message: {
-          id: `assistant-${session.id}`,
-          time: { created: now },
-          type: "assistant",
-          agent: "primary",
-          content: [{ type: "text", text: session.finalText }],
-          finish: "stop",
-        },
-      },
-    })
+    events.push(event(`text-started-${session.id}`, "session.text.started", location, { sessionID, assistantMessageID, ordinal: 0 }))
+    events.push(event(`text-delta-${session.id}`, "session.text.delta", location, { sessionID, assistantMessageID, ordinal: 0, delta: session.finalText }))
+    events.push(event(`text-ended-${session.id}`, "session.text.ended", location, { sessionID, assistantMessageID, ordinal: 0, text: session.finalText }))
+    events.push(
+      event(`step-ended-${session.id}`, "session.step.ended", location, {
+        sessionID,
+        assistantMessageID,
+        finish: "stop",
+        time: { completed: Date.now() },
+      }),
+    )
   }
 
   if (session.error) {
-    events.push({
-      id: `error-${session.id}`,
-      type: "session.error",
-      location,
-      data: { sessionID: cmdSessionId ?? session.id, error: { message: session.error } },
-    })
+    events.push(
+      event(`step-failed-${session.id}`, "session.step.failed", location, {
+        sessionID,
+        assistantMessageID,
+        finish: "error",
+        error: { message: session.error },
+      }),
+    )
   }
 
-  events.push({
-    id: `state-${session.id}`,
-    type: "session.updated",
-    location,
-    data: {
-      sessionID: cmdSessionId ?? session.id,
-      state: { status: session.state === "error" ? "error" : "done" },
-    },
-  })
+  events.push(event(`updated-${session.id}`, "session.updated", location, { sessionID, info: toSessionInfo(session) }))
 
   return events
 }
 
 /** The initial event the renderer's event stream must start with. */
 export function serverConnectedEvent(): V2Event {
-  return { id: `connected-${Date.now()}`, type: "server.connected", data: {} }
+  return event(`connected-${Date.now()}`, "server.connected", { directory: process.cwd() }, {})
 }
