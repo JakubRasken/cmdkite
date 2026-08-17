@@ -47,12 +47,28 @@ export function createApp(runner: CmdRunner) {
       }
 
       if (req.method === "GET" && path === "/api/project") {
-        sendJson(res, 200, { data: [] })
+        const directory = process.cwd()
+        sendJson(res, 200, [
+          {
+            id: "local",
+            canonical: directory,
+            name: "Default Project",
+            time: { created: Date.now(), updated: Date.now() },
+            sandboxes: [],
+          },
+        ])
         return
       }
 
       if (req.method === "GET" && path === "/api/project/current") {
-        sendJson(res, 200, { data: null })
+        const directory = process.cwd()
+        sendJson(res, 200, {
+          id: "local",
+          canonical: directory,
+          name: "Default Project",
+          time: { created: Date.now(), updated: Date.now() },
+          sandboxes: [],
+        })
         return
       }
 
@@ -102,7 +118,11 @@ export function createApp(runner: CmdRunner) {
       }
 
       if (req.method === "GET" && path === "/api/session/active") {
-        sendJson(res, 200, { data: null })
+        const active: Record<string, { type: "running" }> = {}
+        for (const session of runner.list()) {
+          if (session.state === "running") active[session.id] = { type: "running" }
+        }
+        sendJson(res, 200, { data: active })
         return
       }
 
@@ -118,6 +138,12 @@ export function createApp(runner: CmdRunner) {
 
       if (req.method === "GET" && path === "/api/experimental/migration/v1") {
         sendJson(res, 200, { status: "completed" })
+        return
+      }
+
+      const worktreeMatch = path.match(/^\/api\/worktree\/([^/]+)$/)
+      if (req.method === "GET" && worktreeMatch) {
+        sendJson(res, 200, [{ directory: process.cwd() }])
         return
       }
 
