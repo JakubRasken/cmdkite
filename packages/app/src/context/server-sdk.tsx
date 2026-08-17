@@ -106,7 +106,6 @@ type ServerSDKBase = {
 function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerScope): ServerSDKBase {
   const platform = usePlatform()
   const abort = new AbortController()
-  console.log("[cmdkite] createServerSdkContextBase", server.http.url)
 
   const eventFetch = (() => {
     if (!platform.fetch || !server) return
@@ -191,7 +190,6 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
 
   async function connect(signal: AbortSignal): Promise<{ error: unknown; connectedAt: number | undefined }> {
     let connectedAt: number | undefined
-    console.log("[cmdkite] connect() opening event stream", server.http.url)
 
     // Bound the initial handshake and tie this request to the stream lifetime.
     const request = new AbortController()
@@ -203,7 +201,6 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
       // Open the event stream and validate its initial handshake.
       const iterator = eventApi.event.subscribe({ signal: request.signal })[Symbol.asyncIterator]()
       const first = await iterator.next()
-      console.log("[cmdkite] event stream first:", first.done ? "done" : first.value?.type)
 
       if (signal.aborted) return { error: undefined, connectedAt }
       if (first.done) {
