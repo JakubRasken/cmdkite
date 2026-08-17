@@ -37,7 +37,8 @@ const m = (
   name,
   family: opts.family,
   capabilities: cap(opts.tools ?? true),
-  time: { released: opts.released ?? Date.UTC(2025, 0, 1) },
+  // Recent release date so the app's "latest" filter keeps the model visible.
+  time: { released: opts.released ?? Date.UTC(2026, 4, 1) },
   cost: cost(),
   limit: { context, output: 128_000 },
   status: opts.status ?? "active",
