@@ -114,8 +114,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
 
   const isAutoAcceptActive = () => {
     const sessionID = actions.session.identity.params.id
-    if (sessionID) return permission.isAutoAccepting(sessionID, sdk().directory)
-    return permission.isAutoAcceptingDirectory(sdk().directory)
+    const directory = sdk()?.directory
+    if (!directory) return false
+    if (sessionID) return permission.isAutoAccepting(sessionID, directory)
+    return permission.isAutoAcceptingDirectory(directory)
   }
   const write = async (value: string) => {
     const body = typeof document === "undefined" ? undefined : document.body

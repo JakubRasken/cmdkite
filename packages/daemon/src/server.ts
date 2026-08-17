@@ -32,9 +32,26 @@ function sendJson(res: ServerResponse, status: number, value: unknown): void {
   res.end(JSON.stringify(value))
 }
 
+const CORS_HEADERS: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  "access-control-allow-headers": "content-type, authorization, x-request-id",
+}
+
+function handleCors(req: IncomingMessage, res: ServerResponse): boolean {
+  for (const [key, value] of Object.entries(CORS_HEADERS)) res.setHeader(key, value)
+  if (req.method === "OPTIONS") {
+    res.writeHead(204)
+    res.end()
+    return true
+  }
+  return false
+}
+
 export function createApp(runner: CmdRunner) {
   const server = createServer(async (req, res) => {
     try {
+      if (handleCors(req, res)) return
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`)
       const path = url.pathname
       res.on("finish", () => console.log(`[cmdkite] ${req.method} ${path} -> ${res.statusCode}`))
@@ -273,6 +290,22 @@ export function createApp(runner: CmdRunner) {
         return
       }
 
+      const sessionAgentMatch = path.match(/^\/api\/session\/([^/]+)\/agent$/)
+      if (req.method === "POST" && sessionAgentMatch) {
+        sendJson(res, 200, null)
+        return
+      }
+
+      const sessionModelMatch = path.match(/^\/api\/session\/([^/]+)\/model$/)
+      if (req.method === "POST" && sessionModelMatch) {
+        const id = decodeURIComponent(sessionModelMatch[1]!)
+        const body = JSON.parse(await readBody(req)) as { model?: { id?: string; providerID?: string } }
+        const session = runner.get(id)
+        if (session && body.model?.id) session.model = body.model.id
+        sendJson(res, 200, null)
+        return
+      }
+
       const messagesMatch = path.match(/^\/api\/session\/([^/]+)\/message$/)
       if (req.method === "GET" && messagesMatch) {
         const id = decodeURIComponent(messagesMatch[1]!)
@@ -300,6 +333,18 @@ export function createApp(runner: CmdRunner) {
       const inboxMatch = path.match(/^\/api\/session\/([^/]+)\/inbox$/)
       if (req.method === "GET" && inboxMatch) {
         sendJson(res, 200, { data: [] })
+        return
+      }
+
+      const formMatch = path.match(/^\/api\/session\/([^/]+)\/form$/)
+      if (req.method === "GET" && formMatch) {
+        // FormListOutput unwraps .data; no forms exist in the harness.
+        sendJson(res, 200, { data: [] })
+        return
+      }
+
+      if (req.method === "GET" && path === "/api/shell") {
+        sendJson(res, 200, { location: locationBody(), data: [] })
         return
       }
 
