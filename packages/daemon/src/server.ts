@@ -153,7 +153,20 @@ export function createApp(runner: CmdRunner) {
       }
 
       if (req.method === "GET" && path === "/api/agent") {
-        sendJson(res, 200, { data: [] })
+        sendJson(res, 200, {
+          location: locationBody(),
+          data: [
+            {
+              id: "build",
+              name: "build",
+              description: "Default coding agent",
+              mode: "primary",
+              hidden: false,
+              request: { settings: {} },
+              permissions: [],
+            },
+          ],
+        })
         return
       }
 
