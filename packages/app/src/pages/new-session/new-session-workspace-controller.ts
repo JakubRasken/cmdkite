@@ -53,18 +53,19 @@ export function createNewSessionWorkspaceController(input: {
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
   const settings = useSettings()
-  const localVcs = createMemo(() => serverSync.child(sdk().directory)[0].vcs)
+  const directory = () => sdk()?.directory ?? ""
+  const localVcs = createMemo(() => (directory() ? serverSync.child(directory())[0].vcs : undefined))
   const visible = createMemo(() =>
-    resolveNewSessionGit({ projectVcs: sync().project?.vcs, branch: localVcs()?.branch }),
+    resolveNewSessionGit({ projectVcs: sync()?.project?.vcs, branch: localVcs()?.branch }),
   )
   const selected = createMemo(() => {
-    const project = sync().project
+    const project = sync()?.project
     const worktree = input.selected()
     if (!project || !worktree) return
     return isWorkspaceSelection(project, worktree) ? worktree : undefined
   })
   const fallback = createMemo(() => {
-    const project = sync().project
+    const project = sync()?.project
     if (!project) return "main"
     return workspaceDefaultSelection(
       settings.workspaces.defaultDestination(),
@@ -75,13 +76,13 @@ export function createNewSessionWorkspaceController(input: {
     resolveNewSessionWorktree({
       enabled: visible(),
       selected: selected(),
-      directory: sdk().directory,
-      projectWorktree: sync().project?.worktree,
+      directory: directory(),
+      projectWorktree: sync()?.project?.worktree,
       fallback: fallback(),
     }),
   )
-  const projectRoot = createMemo(() => sync().project?.worktree ?? sdk().directory)
-  const localBranch = createMemo(() => serverSync.child(projectRoot())[0].vcs?.branch)
+  const projectRoot = createMemo(() => sync()?.project?.worktree ?? directory())
+  const localBranch = createMemo(() => (projectRoot() ? serverSync.child(projectRoot())[0].vcs?.branch : undefined))
   const branch = createMemo(() =>
     resolveNewSessionBranch({
       worktree: value(),
@@ -90,7 +91,7 @@ export function createNewSessionWorkspaceController(input: {
     }),
   )
   const remember = (worktree = value()) => {
-    const project = sync().project
+    const project = sync()?.project
     if (!project) return
     const local = worktree === "main" || sameDirectory(worktree, project.worktree)
     settings.workspaces.setLastUsed(serverSDK.scope, project.id, local ? "local" : "workspace")
@@ -100,21 +101,21 @@ export function createNewSessionWorkspaceController(input: {
     selection: {
       value,
       workspace: createMemo(() => {
-        const project = sync().project
+        const project = sync()?.project
         const current = value()
         return current === "create" || (!!project && isWorkspaceDirectory(project, current))
       }),
       reset: () => input.setSelected(undefined),
       remember,
       set: (worktree: string) => {
-        input.setSelected(normalizeNewSessionWorktree(worktree, sdk().directory, sync().project?.worktree))
+        input.setSelected(normalizeNewSessionWorktree(worktree, directory(), sync()?.project?.worktree))
         remember(worktree)
       },
     },
     project: {
       root: projectRoot,
       workspaces: () => {
-        const project = sync().project
+        const project = sync()?.project
         return project ? workspaceDirectories(project) : []
       },
       git: visible,
