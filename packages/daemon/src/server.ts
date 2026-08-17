@@ -1,4 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
+import { readdir, readFile, stat } from "node:fs/promises"
+import { join } from "node:path"
 import { CmdRunner, type RunOptions } from "./runner.ts"
 import {
   serverConnectedEvent,
@@ -36,6 +38,75 @@ export function createApp(runner: CmdRunner) {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`)
       const path = url.pathname
       res.on("finish", () => console.log(`[cmdkite] ${req.method} ${path} -> ${res.statusCode}`))
+
+      // Resolve the location[directory] query param (the project root) with a cwd fallback.
+      const locationDir = (): string => {
+        const raw = url.searchParams.get("location[directory]") ?? url.searchParams.get("location")
+        if (!raw) return process.cwd()
+        try {
+          const parsed = JSON.parse(raw) as { directory?: string }
+          return parsed.directory ?? process.cwd()
+        } catch {
+          return raw
+        }
+      }
+      const locationBody = () => {
+        const directory = locationDir()
+        return {
+          directory,
+          workspaceID: "local",
+          project: { id: "local", directory, canonical: directory },
+        }
+      }
+
+      if (req.method === "GET" && path === "/api/fs/list") {
+        const root = locationDir()
+        const rel = url.searchParams.get("path") ?? ""
+        const target = join(root, rel)
+        const entries = await readdir(target, { withFileTypes: true }).catch(() => [])
+        const data = entries.map((entry) => ({ path: join(rel, entry.name), type: entry.isDirectory() ? "directory" : "file" as const }))
+        sendJson(res, 200, { location: locationBody(), data })
+        return
+      }
+
+      if (req.method === "GET" && path === "/api/fs/find") {
+        const root = locationDir()
+        const query = (url.searchParams.get("query") ?? "").toLowerCase()
+        const limit = Number(url.searchParams.get("limit") ?? 50)
+        const results: { path: string; type: "file" | "directory" }[] = []
+        const walk = async (dir: string, depth: number): Promise<void> => {
+          if (results.length >= limit || depth > 4) return
+          const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+          for (const entry of entries) {
+            if (entry.name === "node_modules" || entry.name === ".git") continue
+            const full = join(dir, entry.name)
+            const rel = full.slice(root.length).replace(/\\/g, "/").replace(/^\//, "")
+            if (rel.toLowerCase().includes(query)) {
+              results.push({ path: rel, type: entry.isDirectory() ? "directory" : "file" })
+              if (results.length >= limit) return
+            }
+            if (entry.isDirectory()) await walk(full, depth + 1)
+          }
+        }
+        await walk(root, 0).catch(() => undefined)
+        sendJson(res, 200, { location: locationBody(), data: results })
+        return
+      }
+
+      const fsReadMatch = path.match(/^\/api\/fs\/read\/(.+)$/)
+      if (req.method === "GET" && fsReadMatch) {
+        const root = locationDir()
+        const target = join(root, decodeURIComponent(fsReadMatch[1]!))
+        const info = await stat(target).catch(() => undefined)
+        if (!info?.isFile()) {
+          sendJson(res, 404, { error: "file not found" })
+          return
+        }
+        const bytes = await readFile(target)
+        res.writeHead(200, { "content-type": "application/octet-stream" })
+        res.end(bytes)
+        return
+      }
 
       if (req.method === "GET" && path === "/api/location") {
         sendJson(res, 200, {
