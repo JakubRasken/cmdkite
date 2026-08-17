@@ -47,16 +47,10 @@ export function createApp(runner: CmdRunner) {
       }
 
       if (req.method === "GET" && path === "/api/project") {
-        const directory = process.cwd()
-        sendJson(res, 200, [
-          {
-            id: "local",
-            canonical: directory,
-            name: "Default Project",
-            time: { created: Date.now(), updated: Date.now() },
-            sandboxes: [],
-          },
-        ])
+        // The app manages projects itself (persisted per-server list). Returning an
+        // empty list lets the UI show the user's own projects with their real names
+        // instead of a synthetic "Default Project" from the daemon's cwd.
+        sendJson(res, 200, [])
         return
       }
 
