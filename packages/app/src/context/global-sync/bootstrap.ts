@@ -95,11 +95,18 @@ function showErrors(input: {
   })
 }
 
-export const loadGlobalConfigQuery = (scope: ServerScope) =>
+export const loadGlobalConfigQuery = (scope: ServerScope, api?: ServerApi) =>
   queryOptions({
     queryKey: [scope, "config"],
-    // TODO: Restore config loading when the V2 client exposes a config API.
-    queryFn: async (): Promise<Config> => ({}),
+    queryFn: async (): Promise<Config> => {
+      if (!api) return {}
+      try {
+        const result = await api.config.get()
+        return (result.data ?? {}) as Config
+      } catch {
+        return {}
+      }
+    },
   })
 
 type ProjectApi = {
@@ -163,7 +170,7 @@ export async function bootstrapGlobal(input: {
   queryClient: QueryClient
 }) {
   const slow = [
-    () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.scope)),
+    () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.scope, input.serverAPI as ServerApi)),
     () => input.queryClient.fetchQuery(loadProvidersQuery(input.scope, null, input.serverAPI)),
     () => input.queryClient.fetchQuery(loadPathQuery(input.scope, null, input.serverAPI.location)),
     () =>

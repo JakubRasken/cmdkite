@@ -10,6 +10,7 @@ const context = createSimpleContext({
     const serverSDK = useServerSDK()
     return createMemo(() => {
       const directory = typeof props.directory === "function" ? props.directory() : props.directory
+      if (!serverSDK) return undefined as unknown as ReturnType<typeof serverSDK.ensureDirSdkContext>
       return serverSDK.ensureDirSdkContext(directory)
     })
   },

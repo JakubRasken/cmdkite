@@ -62,18 +62,18 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const sdk = useSDK()
     const sync = useSync()
     const serverSDK = useServerSDK()
-    const providers = useProviders(() => sdk().directory)
+    const providers = useProviders(() => sdk()?.directory)
     const models = useModels()
     const settings = useSettings()
 
     const id = createMemo(() => params.id || undefined)
-    const list = createMemo(() => sync().data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
+    const list = createMemo(() => (sync()?.data?.agent ?? []).filter((item) => item.mode !== "subagent" && !item.hidden))
     const agentsVisible = createMemo(() => settings.visibility.customAgents() || hasCustomAgent(list()))
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
     const [saved, setSaved, , savedReady] = persisted(
       {
-        ...Persist.serverWorkspace(serverSDK.scope, sdk().directory, "model-selection", ["model-selection.v1"]),
+        ...(serverSDK ? Persist.serverWorkspace(serverSDK.scope, sdk()?.directory ?? "", "model-selection", ["model-selection.v1"]) : {}),
         migrate,
       },
       createStore<Saved>({
@@ -127,14 +127,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const scope = createMemo<State | undefined>(() => {
       const session = id()
       if (!session) return store.draft ?? store.promoting
-      return saved.session[session] ?? handoff.get(handoffKey(serverSDK.scope, sdk().directory, session))
+      const key = serverSDK && sdk()?.directory ? handoffKey(serverSDK.scope, sdk()!.directory!, session) : undefined
+      return saved.session[session] ?? (key ? handoff.get(key) : undefined)
     })
 
     createEffect(() => {
       const session = id()
-      if (!session) return
+      if (!session || !serverSDK || !sdk()?.directory) return
 
-      const key = handoffKey(serverSDK.scope, sdk().directory, session)
+      const key = handoffKey(serverSDK.scope, sdk()!.directory!, session)
       const next = handoff.get(key)
       if (!next) return
       if (saved.session[session] !== undefined) {
@@ -149,7 +150,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     })
 
     const configuredModel = () => {
-      const configured = sync().data.config.model
+      const syncCtx = sync()
+      const configured = syncCtx?.data?.config?.model
       if (!configured) return
       const [providerID, modelID] = configured.split("/")
       const model = { providerID, modelID }
@@ -374,7 +376,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     const result = {
-      slug: createMemo(() => base64Encode(sdk().directory)),
+      slug: createMemo(() => base64Encode(sdk()?.directory ?? "")),
       model,
       agent,
       session: {
@@ -384,11 +386,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
         promote(dir: string, session: string, state?: State) {
           const next = clone(state ?? snapshot())
-          if (!next) return
+          if (!next || !serverSDK) return
           const key = handoffKey(serverSDK.scope, dir, session)
           handoff.set(key, next)
 
-          if (dir === sdk().directory) {
+          if (dir === sdk()?.directory) {
             setSaved("session", session, next)
           }
 
@@ -397,10 +399,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
         restore(msg: { sessionID: string; agent: string; model: ModelKey }) {
           const session = id()
-          if (!session) return
+          if (!session || !serverSDK || !sdk()?.directory) return
           if (msg.sessionID !== session) return
           if (saved.session[session] !== undefined) return
-          if (handoff.has(handoffKey(serverSDK.scope, sdk().directory, session))) return
+          if (handoff.has(handoffKey(serverSDK.scope, sdk()!.directory!, session))) return
 
           setSaved("session", session, {
             agent: msg.agent,

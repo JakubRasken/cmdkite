@@ -98,10 +98,11 @@ function createServerController(
   projects: ReturnType<typeof createServerProjects>,
 ) {
   const connKey = ServerConnection.key(conn)
-  const sdk = createServerSdkContext(conn, scope)
-  const sync = createServerSyncContext(sdk)
-  const permission = createServerPermissionState({ sdk, sync })
-  const notification = createServerNotificationState({ sdk, sync, key: connKey })
+  try {
+    const sdk = createServerSdkContext(conn, scope)
+    const sync = createServerSyncContext(sdk)
+    const permission = createServerPermissionState({ sdk, sync })
+    const notification = createServerNotificationState({ sdk, sync, key: connKey })
 
   function enrich(project: { worktree: string; expanded: boolean }) {
     const [childStore] = sync.child(project.worktree, { bootstrap: false })
@@ -144,6 +145,10 @@ function createServerController(
     },
     permission,
     notification,
+  }
+  } catch (error) {
+    console.error("[cmdkite] createServerController failed", error)
+    throw error
   }
 }
 

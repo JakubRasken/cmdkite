@@ -303,6 +303,11 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     void start()
   })
 
+  // The SDK context may be created inside a createRoot (server controller),
+  // where onMount never fires. Start the stream eagerly so the connection
+  // is established as soon as the server is selected.
+  if (typeof window !== "undefined") void start()
+
   onCleanup(() => {
     stop()
     abort.abort()
@@ -349,7 +354,7 @@ export function createServerSdkContext(server: ServerConnection.Any, scope: Serv
 
 export const useServerSDK = () => {
   const server = useServer()
-  return server.ctx.sdk
+  return server.ctx?.sdk
 }
 
 type SDKEventMap = {

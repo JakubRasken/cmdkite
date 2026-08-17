@@ -23,18 +23,17 @@ function sendJson(res: ServerResponse, status: number, value: unknown): void {
 }
 
 export function createApp(runner: CmdRunner) {
-  return createServer(async (req, res) => {
+  const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`)
       const path = url.pathname
-      console.log(`[cmdkite] ${req.method} ${path}`)
+      res.on("finish", () => console.log(`[cmdkite] ${req.method} ${path} -> ${res.statusCode}`))
 
       if (req.method === "GET" && path === "/api/location") {
         sendJson(res, 200, {
-          data: {
-            directory: process.cwd(),
-            project: { directory: process.cwd() },
-          },
+          directory: process.cwd(),
+          workspaceID: "local",
+          project: { id: "local", directory: process.cwd(), canonical: process.cwd() },
         })
         return
       }
@@ -99,8 +98,31 @@ export function createApp(runner: CmdRunner) {
         return
       }
 
+      if (req.method === "GET" && path === "/api/mcp") {
+        sendJson(res, 200, { data: [] })
+        return
+      }
+
+      if (req.method === "GET" && path === "/api/mcp/resource") {
+        sendJson(res, 200, { data: [] })
+        return
+      }
+
+      if (req.method === "GET" && path === "/api/experimental/migration/v1") {
+        sendJson(res, 200, { status: "completed" })
+        return
+      }
+
       if (req.method === "GET" && path === "/api/config") {
-        sendJson(res, 200, { data: { model: null } })
+        sendJson(res, 200, {
+          data: {
+            model: "default/default",
+            small_model: "default/default",
+            default_agent: "build",
+            username: "cmdkite",
+            permission: "auto-accept",
+          },
+        })
         return
       }
 
@@ -204,7 +226,13 @@ export function createApp(runner: CmdRunner) {
           }
           for (const event of toEvents(session)) send(event)
         }
-        req.on("close", unsubscribe)
+        // Keep the stream alive with periodic comments so proxies/browsers
+        // don't idle-close it while no session events are flowing.
+        const heartbeat = setInterval(() => res.write(": ping\n\n"), 15_000)
+        req.on("close", () => {
+          clearInterval(heartbeat)
+          unsubscribe()
+        })
         return
       }
 
@@ -258,6 +286,7 @@ export function createApp(runner: CmdRunner) {
       sendJson(res, 500, { error: message })
     }
   })
+  return server
 }
 
 export function startDaemon(): void {
