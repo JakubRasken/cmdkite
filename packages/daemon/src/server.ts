@@ -1,6 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { CmdRunner, type RunOptions } from "./runner.ts"
-import { serverConnectedEvent, toEvents, toSessionInfo, toSessionsResponse, toStartEvents } from "./compat.ts"
+import {
+  serverConnectedEvent,
+  toEvents,
+  toSessionInfo,
+  toSessionMessages,
+  toSessionsResponse,
+  toStartEvents,
+} from "./compat.ts"
 
 const PORT = Number(process.env.CMDKITE_PORT ?? 41414)
 const HOST = process.env.CMDKITE_HOST ?? "127.0.0.1"
@@ -153,6 +160,36 @@ export function createApp(runner: CmdRunner) {
           return
         }
         sendJson(res, 200, { data: toSessionInfo(session) })
+        return
+      }
+
+      const messagesMatch = path.match(/^\/api\/session\/([^/]+)\/message$/)
+      if (req.method === "GET" && messagesMatch) {
+        const id = decodeURIComponent(messagesMatch[1]!)
+        const session = runner.get(id)
+        if (!session) {
+          sendJson(res, 404, { error: "session not found" })
+          return
+        }
+        sendJson(res, 200, { data: toSessionMessages(session), cursor: { previous: null, next: null } })
+        return
+      }
+
+      const contextMatch = path.match(/^\/api\/session\/([^/]+)\/context$/)
+      if (req.method === "GET" && contextMatch) {
+        const id = decodeURIComponent(contextMatch[1]!)
+        const session = runner.get(id)
+        if (!session) {
+          sendJson(res, 404, { error: "session not found" })
+          return
+        }
+        sendJson(res, 200, { data: toSessionMessages(session) })
+        return
+      }
+
+      const inboxMatch = path.match(/^\/api\/session\/([^/]+)\/inbox$/)
+      if (req.method === "GET" && inboxMatch) {
+        sendJson(res, 200, { data: [] })
         return
       }
 

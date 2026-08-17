@@ -65,6 +65,30 @@ export function toSessionsResponse(sessions: Session[]): SessionsResponse {
   return { data: sessions.map(toSessionInfo), cursor: { previous: null, next: null } }
 }
 
+/** Build the message list for a session (user prompt + assistant reply). */
+export function toSessionMessages(session: Session): SessionMessage[] {
+  const messages: SessionMessage[] = [
+    {
+      id: `user-${session.id}`,
+      time: { created: session.createdAt },
+      type: "user",
+      text: session.prompt,
+    },
+  ]
+  if (session.finalText !== undefined) {
+    messages.push({
+      id: `assistant-${session.id}`,
+      time: { created: Date.now() },
+      type: "assistant",
+      agent: "primary",
+      model: "default",
+      content: [{ type: "text", text: session.finalText }],
+      finish: session.state === "error" ? "error" : "stop",
+    })
+  }
+  return messages
+}
+
 /** Events emitted as soon as a run starts: session created + the user's inbox message. */
 export function toStartEvents(session: Session): V2Event[] {
   const location = locationOf(session)
