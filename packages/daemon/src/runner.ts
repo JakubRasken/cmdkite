@@ -34,6 +34,7 @@ export interface Session {
   usage?: unknown
   finalText?: string
   error?: string
+  model?: string
 }
 
 type Listener = (session: Session, frame: Frame) => void
@@ -68,7 +69,7 @@ export class CmdRunner {
   }
 
   /** Register an idle session (no CLI run yet). The app creates sessions before prompting. */
-  create(opts: Pick<RunOptions, "cwd" | "prompt"> & { id?: string }): Session {
+  create(opts: Pick<RunOptions, "cwd" | "prompt"> & { id?: string; model?: string }): Session {
     const id = opts.id ?? randomUUID()
     const session: Session = {
       id,
@@ -76,6 +77,7 @@ export class CmdRunner {
       cwd: opts.cwd,
       prompt: opts.prompt,
       createdAt: Date.now(),
+      model: opts.model,
     }
     this.sessions.set(id, session)
     this.trimOld()
@@ -88,6 +90,7 @@ export class CmdRunner {
     if (!session) return false
     session.state = "running"
     session.prompt = opts.prompt
+    if (opts.model) session.model = opts.model
     this.emit(id, session)
     this.spawnRun(id, opts)
     return true
@@ -107,7 +110,7 @@ export class CmdRunner {
     const args: string[] = ["-p", opts.prompt, "--output-format", "json", "--skip-onboarding", "--trust"]
     if (opts.continue) args.push("--continue")
     else if (opts.resume) args.push("--resume", opts.resume)
-    if (opts.model) args.push("--model", opts.model)
+    if (opts.model ?? session.model) args.push("--model", opts.model ?? session.model!)
     if (opts.effort) args.push("--effort", opts.effort)
     if (opts.theme) args.push("--theme", opts.theme)
     if (opts.yolo !== false) args.push("--yolo", "--auto-accept")

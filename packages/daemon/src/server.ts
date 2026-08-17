@@ -8,6 +8,7 @@ import {
   toSessionsResponse,
   toStartEvents,
 } from "./compat.ts"
+import { DEFAULT_MODEL, MODELS, PROVIDER } from "./models.ts"
 
 const PORT = Number(process.env.CMDKITE_PORT ?? 41414)
 const HOST = process.env.CMDKITE_HOST ?? "127.0.0.1"
@@ -56,17 +57,17 @@ export function createApp(runner: CmdRunner) {
       }
 
       if (req.method === "GET" && path === "/api/provider") {
-        sendJson(res, 200, { data: [] })
+        sendJson(res, 200, { data: [PROVIDER] })
         return
       }
 
       if (req.method === "GET" && path === "/api/model") {
-        sendJson(res, 200, { data: [{ id: "default", name: "Default" }] })
+        sendJson(res, 200, { data: MODELS })
         return
       }
 
       if (req.method === "GET" && path === "/api/model/default") {
-        sendJson(res, 200, { data: { id: "default" } })
+        sendJson(res, 200, { data: DEFAULT_MODEL })
         return
       }
 
@@ -123,8 +124,8 @@ export function createApp(runner: CmdRunner) {
       if (req.method === "GET" && path === "/api/config") {
         sendJson(res, 200, {
           data: {
-            model: "default/default",
-            small_model: "default/default",
+            model: DEFAULT_MODEL.modelID,
+            small_model: DEFAULT_MODEL.modelID,
             default_agent: "build",
             username: "cmdkite",
             permission: "auto-accept",
@@ -144,9 +145,14 @@ export function createApp(runner: CmdRunner) {
       }
 
       if (req.method === "POST" && path === "/api/session") {
-        const body = JSON.parse(await readBody(req)) as { title?: string; model?: string; location?: { directory?: string } }
+        const body = JSON.parse(await readBody(req)) as {
+          title?: string
+          model?: { id?: string; providerID?: string }
+          location?: { directory?: string }
+        }
         const cwd = body.location?.directory ?? process.cwd()
-        const session = runner.create({ cwd, prompt: body.title ?? "" })
+        const model = body.model?.id
+        const session = runner.create({ cwd, prompt: body.title ?? "", model })
         sendJson(res, 200, { data: toSessionInfo(session) })
         return
       }

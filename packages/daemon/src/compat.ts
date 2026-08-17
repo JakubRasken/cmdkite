@@ -53,6 +53,7 @@ export function toSessionInfo(session: Session): SessionInfo {
     // sessionId (from the result frame) is kept for --resume, not surfaced.
     id: session.id,
     projectID: "local",
+    model: session.model,
     cost: { amount: 0, currency: "USD" },
     tokens: {},
     time: { created: session.createdAt, updated: Date.now() },
