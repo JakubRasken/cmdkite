@@ -118,6 +118,26 @@ describe("normalizeSessionMessages", () => {
     expect(normalizeSessionMessages("ses_1", source).messages).toEqual([])
   })
 
+  test("tolerates malformed assistant metadata from a restarted server", () => {
+    const source = [
+      { id: "msg_user", type: "user", text: "hello", time: { created: 1 } },
+      {
+        id: "msg_assistant",
+        type: "assistant",
+        agent: "build",
+        model: undefined,
+        content: undefined,
+        error: { type: undefined, message: "request failed" },
+        time: { created: 2 },
+      },
+    ] as unknown as SessionMessageInfo[]
+
+    expect(normalizeSessionMessages("ses_1", source).messages[1]).toMatchObject({
+      role: "assistant",
+      error: { name: "UnknownError" },
+    })
+  })
+
   test("projects a current shell message into a renderable standalone turn", () => {
     const source = [
       {

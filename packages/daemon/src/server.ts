@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { readdir, readFile, stat } from "node:fs/promises"
 import { join } from "node:path"
-import { CmdRunner, type RunOptions } from "./runner.ts"
+import { CmdRunner, type RunOptions, type Session } from "./runner.ts"
 import {
   serverConnectedEvent,
   toEvents,
@@ -9,6 +9,9 @@ import {
   toSessionMessages,
   toSessionsResponse,
   toStartEvents,
+  toStreamEndEvents,
+  toTextDeltaEvent,
+  toTextStartedEvent,
 } from "./compat.ts"
 import { DEFAULT_MODEL, MODELS, PROVIDER } from "./models.ts"
 
@@ -81,7 +84,10 @@ export function createApp(runner: CmdRunner) {
         const rel = url.searchParams.get("path") ?? ""
         const target = join(root, rel)
         const entries = await readdir(target, { withFileTypes: true }).catch(() => [])
-        const data = entries.map((entry) => ({ path: join(rel, entry.name), type: entry.isDirectory() ? "directory" : "file" as const }))
+        const data = entries.map((entry) => ({
+          path: join(rel, entry.name),
+          type: entry.isDirectory() ? "directory" : ("file" as const),
+        }))
         sendJson(res, 200, { location: locationBody(), data })
         return
       }
@@ -126,11 +132,7 @@ export function createApp(runner: CmdRunner) {
       }
 
       if (req.method === "GET" && path === "/api/location") {
-        sendJson(res, 200, {
-          directory: process.cwd(),
-          workspaceID: "local",
-          project: { id: "local", directory: process.cwd(), canonical: process.cwd() },
-        })
+        sendJson(res, 200, locationBody())
         return
       }
 
@@ -143,7 +145,7 @@ export function createApp(runner: CmdRunner) {
       }
 
       if (req.method === "GET" && path === "/api/project/current") {
-        const directory = process.cwd()
+        const directory = locationDir()
         sendJson(res, 200, {
           id: "local",
           canonical: directory,
@@ -155,17 +157,18 @@ export function createApp(runner: CmdRunner) {
       }
 
       if (req.method === "GET" && path === "/api/provider") {
-        sendJson(res, 200, { data: [PROVIDER] })
+        sendJson(res, 200, { location: locationBody(), data: [PROVIDER] })
         return
       }
 
       if (req.method === "GET" && path === "/api/model") {
-        sendJson(res, 200, { data: MODELS })
+        sendJson(res, 200, { location: locationBody(), data: MODELS })
         return
       }
 
       if (req.method === "GET" && path === "/api/model/default") {
-        sendJson(res, 200, { data: DEFAULT_MODEL })
+        const defaultModel = MODELS.find((model) => model.id === DEFAULT_MODEL.modelID) ?? MODELS[0]
+        sendJson(res, 200, { location: locationBody(), data: defaultModel ?? null })
         return
       }
 
@@ -188,27 +191,27 @@ export function createApp(runner: CmdRunner) {
       }
 
       if (req.method === "GET" && path === "/api/command") {
-        sendJson(res, 200, { data: [] })
+        sendJson(res, 200, { location: locationBody(), data: [] })
         return
       }
 
       if (req.method === "GET" && path === "/api/reference") {
-        sendJson(res, 200, { data: [] })
+        sendJson(res, 200, { location: locationBody(), data: [] })
         return
       }
 
       if (req.method === "GET" && path === "/api/permission/request") {
-        sendJson(res, 200, { data: [] })
+        sendJson(res, 200, { location: locationBody(), data: [] })
         return
       }
 
       if (req.method === "GET" && path === "/api/integration") {
-        sendJson(res, 200, { data: [] })
+        sendJson(res, 200, { location: locationBody(), data: [] })
         return
       }
 
       if (req.method === "GET" && path === "/api/vcs") {
-        sendJson(res, 200, { data: {} })
+        sendJson(res, 200, { location: locationBody(), data: {} })
         return
       }
 
@@ -222,12 +225,12 @@ export function createApp(runner: CmdRunner) {
       }
 
       if (req.method === "GET" && path === "/api/mcp") {
-        sendJson(res, 200, { data: [] })
+        sendJson(res, 200, { location: locationBody(), data: [] })
         return
       }
 
       if (req.method === "GET" && path === "/api/mcp/resource") {
-        sendJson(res, 200, { data: [] })
+        sendJson(res, 200, { location: locationBody(), data: { resources: [], templates: [] } })
         return
       }
 
@@ -238,20 +241,24 @@ export function createApp(runner: CmdRunner) {
 
       const worktreeMatch = path.match(/^\/api\/worktree\/([^/]+)$/)
       if (req.method === "GET" && worktreeMatch) {
-        sendJson(res, 200, [{ directory: process.cwd() }])
+        sendJson(res, 200, [{ directory: locationDir() }])
         return
       }
 
       if (req.method === "GET" && path === "/api/config") {
-        sendJson(res, 200, {
-          data: {
-            model: DEFAULT_MODEL.modelID,
-            small_model: DEFAULT_MODEL.modelID,
-            default_agent: "build",
-            username: "cmdkite",
-            permission: "auto-accept",
+        sendJson(res, 200, [
+          {
+            type: "document",
+            path: "cmdkite",
+            info: {
+              model: `${DEFAULT_MODEL.providerID}/${DEFAULT_MODEL.modelID}`,
+              small_model: `${DEFAULT_MODEL.providerID}/${DEFAULT_MODEL.modelID}`,
+              default_agent: "build",
+              username: "cmdkite",
+              permission: "auto-accept",
+            },
           },
-        })
+        ])
         return
       }
 
@@ -261,19 +268,22 @@ export function createApp(runner: CmdRunner) {
       }
 
       if (req.method === "GET" && path === "/api/session") {
-        sendJson(res, 200, toSessionsResponse(runner.list()))
+        const directory = url.searchParams.get("directory")
+        const sessions = directory ? runner.list().filter((session) => session.cwd === directory) : runner.list()
+        sendJson(res, 200, toSessionsResponse(sessions))
         return
       }
 
       if (req.method === "POST" && path === "/api/session") {
         const body = JSON.parse(await readBody(req)) as {
           title?: string
+          agent?: string
           model?: { id?: string; providerID?: string }
           location?: { directory?: string }
         }
         const cwd = body.location?.directory ?? process.cwd()
         const model = body.model?.id
-        const session = runner.create({ cwd, prompt: body.title ?? "", model })
+        const session = runner.create({ cwd, prompt: body.title ?? "", model, agent: body.agent })
         sendJson(res, 200, { data: toSessionInfo(session) })
         return
       }
@@ -283,7 +293,17 @@ export function createApp(runner: CmdRunner) {
         const id = decodeURIComponent(sessionMatch[1]!)
         const session = runner.get(id)
         if (!session) {
-          sendJson(res, 404, { error: "session not found" })
+          // Graceful empty session for stale ids (daemon restarts lose memory).
+          sendJson(res, 200, {
+            data: {
+              id,
+              projectID: "local",
+              cost: 0,
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              time: { created: Date.now(), updated: Date.now() },
+              location: { directory: locationDir() },
+            },
+          })
           return
         }
         sendJson(res, 200, { data: toSessionInfo(session) })
@@ -292,7 +312,11 @@ export function createApp(runner: CmdRunner) {
 
       const sessionAgentMatch = path.match(/^\/api\/session\/([^/]+)\/agent$/)
       if (req.method === "POST" && sessionAgentMatch) {
-        sendJson(res, 200, null)
+        const id = decodeURIComponent(sessionAgentMatch[1]!)
+        const body = JSON.parse(await readBody(req)) as { agent?: string }
+        if (body.agent) runner.ensure(id, { cwd: locationDir(), agent: body.agent })
+        res.writeHead(204)
+        res.end()
         return
       }
 
@@ -300,9 +324,9 @@ export function createApp(runner: CmdRunner) {
       if (req.method === "POST" && sessionModelMatch) {
         const id = decodeURIComponent(sessionModelMatch[1]!)
         const body = JSON.parse(await readBody(req)) as { model?: { id?: string; providerID?: string } }
-        const session = runner.get(id)
-        if (session && body.model?.id) session.model = body.model.id
-        sendJson(res, 200, null)
+        if (body.model?.id) runner.ensure(id, { cwd: locationDir(), model: body.model.id }).model = body.model.id
+        res.writeHead(204)
+        res.end()
         return
       }
 
@@ -311,7 +335,7 @@ export function createApp(runner: CmdRunner) {
         const id = decodeURIComponent(messagesMatch[1]!)
         const session = runner.get(id)
         if (!session) {
-          sendJson(res, 404, { error: "session not found" })
+          sendJson(res, 200, { data: [], cursor: { previous: null, next: null } })
           return
         }
         sendJson(res, 200, { data: toSessionMessages(session), cursor: { previous: null, next: null } })
@@ -323,7 +347,7 @@ export function createApp(runner: CmdRunner) {
         const id = decodeURIComponent(contextMatch[1]!)
         const session = runner.get(id)
         if (!session) {
-          sendJson(res, 404, { error: "session not found" })
+          sendJson(res, 200, { data: [] })
           return
         }
         sendJson(res, 200, { data: toSessionMessages(session) })
@@ -351,7 +375,11 @@ export function createApp(runner: CmdRunner) {
       const promptMatch = path.match(/^\/api\/session\/([^/]+)\/prompt$/)
       if (req.method === "POST" && promptMatch) {
         const id = decodeURIComponent(promptMatch[1]!)
-        const body = JSON.parse(await readBody(req)) as { text?: string; model?: { id?: string; providerID?: string }; resume?: boolean }
+        const body = JSON.parse(await readBody(req)) as {
+          text?: string
+          model?: { id?: string; providerID?: string }
+          resume?: boolean
+        }
         const text = body.text ?? ""
         if (!text.trim()) {
           sendJson(res, 400, { error: "text is required" })
@@ -361,6 +389,7 @@ export function createApp(runner: CmdRunner) {
           prompt: text,
           model: body.model?.id,
           continue: body.resume ?? false,
+          cwd: locationDir(),
         })
         if (!ok) {
           sendJson(res, 404, { error: "session not found" })
@@ -388,36 +417,57 @@ export function createApp(runner: CmdRunner) {
         })
         const send = (event: unknown) => res.write(`data: ${JSON.stringify(event)}\n\n`)
         send(serverConnectedEvent())
-        // Emit start events (created + user inbox message) when a run begins,
-        // and the text/step completion events when the run settles.
+
+        // Track start/text emission per session so late subscribers don't get
+        // duplicate start events, and live streams aren't replayed a second time.
         const started = new Set<string>()
+        const textStarted = new Set<string>()
         const settled = new Set<string>()
+
+        const emitStart = (session: Session) => {
+          if (started.has(session.id)) return
+          started.add(session.id)
+          for (const event of toStartEvents(session)) send(event)
+        }
+
         const unsubscribe = runner.onFrame((session, frame) => {
           if (session.state === "running") {
-            if (started.has(session.id)) return
-            started.add(session.id)
-            for (const event of toStartEvents(session)) send(event)
+            emitStart(session)
+
+            // Stream CLI text_delta frames live instead of waiting for process
+            // exit. This keeps the UI from sitting on "Thinking" until done.
+            if (frame.type === "event") {
+              const type = frame.event.type
+              if (type === "text_delta" && typeof frame.event.delta === "string") {
+                if (!textStarted.has(session.id)) {
+                  textStarted.add(session.id)
+                  send(toTextStartedEvent(session))
+                }
+                send(toTextDeltaEvent(session, frame.event.delta))
+              }
+            }
             return
           }
+
           if (settled.has(session.id)) return
           settled.add(session.id)
-          if (!started.has(session.id)) {
-            started.add(session.id)
-            for (const event of toStartEvents(session)) send(event)
-          }
-          for (const event of toEvents(session)) send(event)
+          emitStart(session)
+          for (const event of toStreamEndEvents(session, textStarted.has(session.id))) send(event)
         })
+
         // Replay already-settled sessions for late subscribers.
         for (const session of runner.list()) {
-          if (session.state === "running" || session.state === "idle") continue
+          if (session.state === "running") {
+            emitStart(session)
+            continue
+          }
+          if (session.state === "idle") continue
           if (settled.has(session.id)) continue
           settled.add(session.id)
-          if (!started.has(session.id)) {
-            started.add(session.id)
-            for (const event of toStartEvents(session)) send(event)
-          }
+          emitStart(session)
           for (const event of toEvents(session)) send(event)
         }
+
         // Keep the stream alive with periodic comments so proxies/browsers
         // don't idle-close it while no session events are flowing.
         const heartbeat = setInterval(() => res.write(": ping\n\n"), 15_000)

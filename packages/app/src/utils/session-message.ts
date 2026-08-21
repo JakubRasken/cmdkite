@@ -58,7 +58,7 @@ export function normalizeSessionMessages(sessionID: string, source: readonly Ses
       return
     }
     if (message.type === "model-switched") {
-      model = message.model
+      model = message.model ?? emptyModel
       return
     }
     if (message.type === "user") {
@@ -89,15 +89,15 @@ export function normalizeSessionMessages(sessionID: string, source: readonly Ses
     }
     if (message.type === "assistant") {
       agent = message.agent
-      model = message.model
+      model = message.model ?? emptyModel
       if (!parentID) return
       const parent = messages.findLast((item) => item.id === parentID)
       if (parent?.role === "user") {
         parent.agent = message.agent
         parent.model = {
-          providerID: message.model.providerID,
-          modelID: message.model.id,
-          variant: message.model.variant,
+          providerID: model.providerID,
+          modelID: model.id,
+          variant: model.variant,
         }
       }
       messages.push(assistantMessage(sessionID, parentID, message))
@@ -239,8 +239,10 @@ function userParts(sessionID: string, message: SessionMessageUser): Part[] {
 }
 
 function assistantMessage(sessionID: string, parentID: string, message: SessionMessageAssistant): AssistantMessage {
+  const model = message.model ?? emptyModel
+  const errorType = typeof message.error?.type === "string" ? message.error.type : ""
   const error = message.error
-    ? message.error.type.toLowerCase().includes("abort") || message.error.type.toLowerCase().includes("interrupt")
+    ? errorType.toLowerCase().includes("abort") || errorType.toLowerCase().includes("interrupt")
       ? { name: "MessageAbortedError" as const, data: { message: message.error.message } }
       : { name: "UnknownError" as const, data: { message: message.error.message } }
     : undefined
@@ -251,9 +253,9 @@ function assistantMessage(sessionID: string, parentID: string, message: SessionM
     time: message.time,
     error,
     parentID,
-    modelID: message.model.id,
-    providerID: message.model.providerID,
-    variant: message.model.variant,
+    modelID: model.id,
+    providerID: model.providerID,
+    variant: model.variant,
     mode: message.agent,
     agent: message.agent,
     path: { cwd: "", root: "" },
@@ -265,7 +267,7 @@ function assistantMessage(sessionID: string, parentID: string, message: SessionM
 
 function assistantParts(sessionID: string, message: SessionMessageAssistant): Part[] {
   const ordinals = { text: 0, reasoning: 0 }
-  return message.content.flatMap((content): Part[] => {
+  return (Array.isArray(message.content) ? message.content : []).flatMap((content): Part[] => {
     if (content.type === "text") {
       const part = textPart(sessionID, message.id, ordinals.text++, content.text)
       return content.text.trim() ? [part] : []

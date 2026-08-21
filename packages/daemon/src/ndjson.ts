@@ -10,6 +10,7 @@ export type ResultFrame = {
   usage?: unknown
   durationMs?: number
   finalText: string
+  error?: unknown
 }
 
 export type EventFrame = {

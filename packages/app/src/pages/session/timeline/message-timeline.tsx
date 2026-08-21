@@ -471,7 +471,7 @@ function MessageTimelineView(
     if (message.type === "model-switched")
       return {
         label: language.t("command.category.model"),
-        data: `${message.model.providerID}/${message.model.id}`,
+        data: message.model ? `${message.model.providerID}/${message.model.id}` : "",
       }
     if (message.type === "location-switched")
       return { label: language.t("ui.patch.action.moved"), data: message.location.directory }

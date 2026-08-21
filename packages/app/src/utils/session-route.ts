@@ -12,8 +12,15 @@ export function legacySessionHref(directory: string, sessionID: string) {
 
 export function requireServerKey(segment: string | undefined) {
   const key = decode64(segment)
-  if (!key || base64Encode(key) !== segment) throw new Error("Invalid server route")
-  return ServerConnection.Key.make(key)
+  if (key && base64Encode(key) === segment) return ServerConnection.Key.make(key)
+
+  // Older desktop state stored the local sidecar key without base64 encoding.
+  if (segment === "sidecar") return ServerConnection.Key.make(segment)
+
+  // The harness runs a single local server; fall back to its key when the
+  // route omits the segment (e.g. legacy-direct session navigation).
+  if (segment === undefined) return ServerConnection.Key.make("sidecar")
+  throw new Error("Invalid server route")
 }
 
 export function legacySessionServer(

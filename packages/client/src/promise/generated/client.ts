@@ -554,6 +554,7 @@ export function make(options: ClientOptions) {
           {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/agent`,
+            query: { location: input["location"] },
             body: { agent: input["agent"] },
             successStatus: 204,
             declaredStatuses: [404, 400, 401],
@@ -566,6 +567,7 @@ export function make(options: ClientOptions) {
           {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/model`,
+            query: { location: input["location"] },
             body: { model: input["model"] },
             successStatus: 204,
             declaredStatuses: [404, 400, 401],
@@ -602,6 +604,7 @@ export function make(options: ClientOptions) {
           {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/prompt`,
+            query: { location: input["location"] },
             body: {
               id: input["id"],
               text: input["text"],

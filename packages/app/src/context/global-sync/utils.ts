@@ -12,27 +12,31 @@ export { pathKey as directoryKey, type PathKey as DirectoryKey } from "@/utils/p
 export const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
 export function normalizeAgentList(input: AgentListOutput["data"] | Agent[]): Agent[] {
+  if (!Array.isArray(input)) return []
   if (input.every((agent) => !("request" in agent))) return input as Agent[]
-  return (input as AgentListOutput["data"]).map((agent) => ({
-    name: agent.id,
-    description: agent.description,
-    mode: agent.mode,
-    hidden: agent.hidden,
-    temperature:
-      typeof agent.request.settings.temperature === "number" ? agent.request.settings.temperature : undefined,
-    topP: typeof agent.request.settings.topP === "number" ? agent.request.settings.topP : undefined,
-    color: agent.color,
-    permission: agent.permissions.map((rule) => ({
-      permission: rule.action,
-      pattern: rule.resource,
-      action: rule.effect,
-    })),
-    model: agent.model && { providerID: agent.model.providerID, modelID: agent.model.id },
-    variant: agent.model?.variant,
-    prompt: agent.system,
-    options: agent.request.settings,
-    steps: agent.steps,
-  }))
+  return (input as AgentListOutput["data"]).map((agent) => {
+    const settings = agent.request?.settings ?? {}
+    const permissions = Array.isArray(agent.permissions) ? agent.permissions : []
+    return {
+      name: agent.id,
+      description: agent.description,
+      mode: agent.mode,
+      hidden: agent.hidden,
+      temperature: typeof settings.temperature === "number" ? settings.temperature : undefined,
+      topP: typeof settings.topP === "number" ? settings.topP : undefined,
+      color: agent.color,
+      permission: permissions.map((rule) => ({
+        permission: rule.action,
+        pattern: rule.resource,
+        action: rule.effect,
+      })),
+      model: agent.model && { providerID: agent.model.providerID, modelID: agent.model.id },
+      variant: agent.model?.variant,
+      prompt: agent.system,
+      options: settings,
+      steps: agent.steps,
+    }
+  })
 }
 
 export function normalizeProviderList(
@@ -41,7 +45,8 @@ export function normalizeProviderList(
   defaultModel?: ModelDefaultOutput["data"],
 ): NormalizedProviderListResponse {
   if (!Array.isArray(providers)) {
-    return providers
+    if (providers && typeof providers === "object" && providers.all instanceof Map) return providers
+    return { all: new Map(), connected: [], default: {} }
   }
   const all = new Map<string, Provider>()
 
@@ -56,10 +61,11 @@ export function normalizeProviderList(
     })
   }
 
-  for (const model of models ?? []) {
+  const modelList = Array.isArray(models) ? models : []
+  for (const model of modelList) {
     const provider = all.get(model.providerID)
     if (!provider || model.status === "deprecated") continue
-    const cost = model.cost.find((item) => item.tier === undefined) ?? model.cost[0]
+    const cost = model.cost?.find((item) => item.tier === undefined) ?? model.cost?.[0]
     provider.models[model.id] = {
       id: model.id,
       providerID: model.providerID,
@@ -73,21 +79,21 @@ export function normalizeProviderList(
       capabilities: {
         temperature: false,
         reasoning: false,
-        attachment: model.capabilities.input.some((item) => item !== "text"),
-        toolcall: model.capabilities.tools,
+        attachment: model.capabilities?.input?.some((item) => item !== "text") ?? false,
+        toolcall: model.capabilities?.tools ?? false,
         input: {
-          text: model.capabilities.input.includes("text"),
-          audio: model.capabilities.input.includes("audio"),
-          image: model.capabilities.input.includes("image"),
-          video: model.capabilities.input.includes("video"),
-          pdf: model.capabilities.input.includes("pdf"),
+          text: model.capabilities?.input?.includes("text") ?? false,
+          audio: model.capabilities?.input?.includes("audio") ?? false,
+          image: model.capabilities?.input?.includes("image") ?? false,
+          video: model.capabilities?.input?.includes("video") ?? false,
+          pdf: model.capabilities?.input?.includes("pdf") ?? false,
         },
         output: {
-          text: model.capabilities.output.includes("text"),
-          audio: model.capabilities.output.includes("audio"),
-          image: model.capabilities.output.includes("image"),
-          video: model.capabilities.output.includes("video"),
-          pdf: model.capabilities.output.includes("pdf"),
+          text: model.capabilities?.output?.includes("text") ?? false,
+          audio: model.capabilities?.output?.includes("audio") ?? false,
+          image: model.capabilities?.output?.includes("image") ?? false,
+          video: model.capabilities?.output?.includes("video") ?? false,
+          pdf: model.capabilities?.output?.includes("pdf") ?? false,
         },
         interleaved: false,
       },
@@ -95,16 +101,16 @@ export function normalizeProviderList(
         input: cost?.input ?? 0,
         output: cost?.output ?? 0,
         cache: {
-          read: cost?.cache.read ?? 0,
-          write: cost?.cache.write ?? 0,
+          read: cost?.cache?.read ?? 0,
+          write: cost?.cache?.write ?? 0,
         },
       },
       limit: model.limit,
       status: model.status,
       options: model.settings ?? {},
       headers: model.headers ?? {},
-      release_date: new Date(model.time.released).toISOString().slice(0, 10),
-      variants: Object.fromEntries(model.variants.map((variant) => [variant.id, variant.settings ?? {}])),
+      release_date: model.time?.released ? new Date(model.time.released).toISOString().slice(0, 10) : "",
+      variants: Object.fromEntries((model.variants ?? []).map((variant) => [variant.id, variant.settings ?? {}])),
     }
   }
 
@@ -116,7 +122,7 @@ export function normalizeProviderList(
         const model =
           defaultModel?.providerID === provider.id
             ? defaultModel
-            : models?.find((item) => item.providerID === provider.id && item.status !== "deprecated")
+            : modelList?.find((item) => item.providerID === provider.id && item.status !== "deprecated")
         return model ? [[provider.id, model.id]] : []
       }),
     ),

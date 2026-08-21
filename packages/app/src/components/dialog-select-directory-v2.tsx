@@ -267,9 +267,6 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
           scrollbar-width: thin;
         }
       `,
-      onExpansionChange(change) {
-        if (change.expanded) void load(change.path, navigation)
-      },
       onSelectionChange(paths) {
         const path = paths.at(-1)
         setSelected(path ? (policy.selection(root(), path) ?? "") : "")
@@ -277,7 +274,22 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
     })
     if (!container) return
     tree.render({ containerWrapper: container })
-    tree.getFileTreeContainer()?.classList.add("directory-picker-v2-tree")
+    const fileTreeContainer = tree.getFileTreeContainer()
+    fileTreeContainer?.classList.add("directory-picker-v2-tree")
+    const onTreeClick = (event: Event) => {
+      const item = event
+        .composedPath()
+        .find(
+          (target): target is HTMLElement =>
+            target instanceof HTMLElement && target.dataset.type === "item" && target.dataset.itemType === "folder",
+        )
+      if (!item) return
+      queueMicrotask(() => {
+        if (item.getAttribute("aria-expanded") === "true") void load(item.dataset.itemPath ?? "", navigation)
+      })
+    }
+    fileTreeContainer?.addEventListener("click", onTreeClick)
+    onCleanup(() => fileTreeContainer?.removeEventListener("click", onTreeClick))
   })
 
   createEffect(() => {

@@ -3290,6 +3290,9 @@ export type SessionForkOutput = { data: SessionInfo }["data"]
 export type SessionSwitchAgentInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly agent: { readonly agent: string }["agent"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
 }
 
 export type SessionSwitchAgentOutput = void
@@ -3299,6 +3302,9 @@ export type SessionSwitchModelInput = {
   readonly model: {
     readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
   }["model"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
 }
 
 export type SessionSwitchModelOutput = void
@@ -3333,6 +3339,9 @@ export type SessionMoveOutput = void
 
 export type SessionPromptInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
   readonly id?: {
     readonly id?: string | null
     readonly text: string

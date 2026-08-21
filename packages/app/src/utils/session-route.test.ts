@@ -38,6 +38,10 @@ describe("session routes", () => {
     expect(() => requireServerKey("not-base64")).toThrow("Invalid server route")
   })
 
+  test("accepts the legacy unencoded local sidecar key", () => {
+    expect(requireServerKey("sidecar")).toBe(ServerConnection.Key.make("sidecar"))
+  })
+
   test("builds the legacy directory-keyed route", () => {
     expect(legacySessionHref("/Users/example/project", "session-1")).toBe(
       "/L1VzZXJzL2V4YW1wbGUvcHJvamVjdA/session/session-1",

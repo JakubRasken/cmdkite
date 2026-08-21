@@ -17,10 +17,10 @@ export function SessionComposerRegion(props: {
   const controller = props.controller
   const settings = useSettings()
   const background = () =>
-    controller.state.background.blocking().length > 0 || controller.state.background.tasks().length > 0
+    (controller.state.background.blocking()?.length ?? 0) > 0 || (controller.state.background.tasks()?.length ?? 0) > 0
   const rolled = () => {
     const revert = controller.revert()
-    return revert?.items.length ? revert : undefined
+    return revert?.items?.length ? revert : undefined
   }
 
   return (
@@ -143,7 +143,7 @@ export function SessionComposerRegion(props: {
                 "margin-top": `${background() ? -36 : -controller.lift()}px`,
               }}
             >
-              <Show when={controller.followup()?.items.length}>
+              <Show when={(controller.followup()?.items?.length ?? 0) > 0}>
                 <SessionFollowupDock
                   items={controller.followup()!.items}
                   sending={controller.followup()!.sending}

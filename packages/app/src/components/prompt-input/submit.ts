@@ -120,15 +120,20 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   try {
     const session = input.session()
     if (session?.agent !== input.draft.agent) {
-      await input.api.switchAgent({ sessionID: input.draft.sessionID, agent: input.draft.agent })
+      await input.api.switchAgent({
+        sessionID: input.draft.sessionID,
+        agent: input.draft.agent,
+        location: { directory: input.draft.sessionDirectory },
+      })
     }
     if (
       session?.model?.providerID !== input.draft.model.providerID ||
-      session.model.id !== input.draft.model.modelID ||
-      (session.model.variant ?? "default") !== (input.draft.variant ?? "default")
+      session?.model?.id !== input.draft.model.modelID ||
+      (session?.model?.variant ?? "default") !== (input.draft.variant ?? "default")
     ) {
       await input.api.switchModel({
         sessionID: input.draft.sessionID,
+        location: { directory: input.draft.sessionDirectory },
         model: {
           id: input.draft.model.modelID,
           providerID: input.draft.model.providerID,
@@ -139,6 +144,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
 
     const admitted = await input.api.prompt({
       sessionID: input.draft.sessionID,
+      location: { directory: input.draft.sessionDirectory },
       id: messageID,
       text: request.text,
       files: request.files.map((file) => ({ uri: file.uri, name: file.name, mention: file.mention })),
@@ -199,9 +205,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const errorMessage = (err: unknown) => {
     if (err && typeof err === "object" && "message" in err && typeof err.message === "string") return err.message
     if (err && typeof err === "object" && "data" in err) {
-      const data = (err as { data?: { message?: string } }).data
+      const data = (err as { data?: { message?: string; error?: string } }).data
       if (data?.message) return data.message
+      if (data?.error) return data.error
     }
+    if (err && typeof err === "object" && "error" in err && typeof err.error === "string") return err.error
     if (err instanceof Error) return err.message
     return language.t("common.requestFailed")
   }
@@ -350,6 +358,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
       let session = currentSession
       if (!session && isNewSession) {
+        ;(globalThis as Record<string, unknown>).__cmdkiteSubmit = {
+          stage: "create-start",
+          agent: currentAgent?.name,
+          model: currentModel?.id,
+          dir: sessionDirectory,
+          sdkReady: !!submissionSDK,
+        }
         const created = await submissionSDK.api.session
           .create({
             agent: currentAgent.name,
@@ -357,6 +372,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             location: { directory: sessionDirectory },
           })
           .catch((err) => {
+            ;(globalThis as Record<string, unknown>).__cmdkiteSubmit = {
+              stage: "create-failed",
+              error: err instanceof Error ? err.message : String(err),
+            }
             showToast({
               title: language.t("prompt.toast.sessionCreateFailed.title"),
               description: errorMessage(err),
@@ -388,6 +407,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         }
       }
       if (!session) {
+        ;(globalThis as Record<string, unknown>).__cmdkiteSubmit = {
+          stage: "no-session-after-create",
+          isNewSession,
+          hadCurrentSession: !!currentSession,
+        }
         showToast({
           title: language.t("prompt.toast.promptSendFailed.title"),
           description: language.t("prompt.toast.promptSendFailed.description"),
@@ -514,6 +538,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         if (sessionDirectory === projectDirectory) {
           submissionSync.set("session_status", session.id, { type: "idle" })
         }
+        console.error(
+          "[cmdkite] sendFollowupDraft failed",
+          err instanceof Error ? (err.stack ?? err.message) : JSON.stringify(err),
+        )
         showToast({
           title: language.t("prompt.toast.promptSendFailed.title"),
           description: errorMessage(err),

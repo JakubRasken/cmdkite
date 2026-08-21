@@ -25,7 +25,7 @@ import {
 } from "./onboarding"
 import { getDefaultServerUrl, preferAppEnv, setDefaultServerUrl } from "./server"
 import { registerUpdaterIpc, setupAutoUpdater, showUpdaterDialog } from "./updater"
-import { startCmkDaemon, type DaemonHandle } from "./daemon"
+import { startCmkDaemon } from "./daemon"
 import { safeWebContentsURL } from "./window-state"
 import {
   getLastFocusedWindow,
@@ -133,9 +133,22 @@ const main = Effect.gen(function* () {
 
   let stopWslServers = async () => {}
   let stopDaemon: (() => Promise<void>) | undefined
+  let stoppingServices: Promise<void> | undefined
+  const stopServices = () => {
+    if (stoppingServices) return stoppingServices
+    stoppingServices = (async () => {
+      const stop = stopDaemon
+      stopDaemon = undefined
+      await stop?.()
+      await stopWslServers()
+    })().finally(() => {
+      stoppingServices = undefined
+    })
+    return stoppingServices
+  }
   const relaunch = () => {
     setAppQuitting()
-    void stopWslServers().finally(() => {
+    void stopServices().finally(() => {
       app.relaunch()
       app.quit()
     })
@@ -188,12 +201,12 @@ const main = Effect.gen(function* () {
 
   app.on("before-quit", () => {
     setAppQuitting()
-    void stopWslServers()
+    void stopServices()
   })
 
   app.on("will-quit", () => {
     setAppQuitting()
-    void stopWslServers()
+    void stopServices()
   })
 
   app.on("child-process-gone", (_event, details) => {
@@ -246,7 +259,7 @@ const main = Effect.gen(function* () {
     relaunch,
   }
   registerIpcHandlers({
-    killSidecar: () => stopDaemon?.() ?? undefined,
+    killSidecar: () => stopServices(),
     relaunch,
     awaitInitialization: Effect.fnUntraced(
       function* () {
@@ -321,7 +334,7 @@ const main = Effect.gen(function* () {
   if (windows.length) createMenu(menuDeps)
 })
 
-async function startWslServers(cli: { url: string }) {
+async function startWslServers(_cli: { url: string }) {
   if (process.platform !== "win32") {
     registerWslIpcHandlers()
     return async () => {}

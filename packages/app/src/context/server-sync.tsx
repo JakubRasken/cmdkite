@@ -128,7 +128,11 @@ export const loadMcpQuery = (
     queryFn: async () => {
       return api
         .list({ location: { directory } })
-        .then((result) => Object.fromEntries(result.data.map((server) => [server.name, server.status])))
+        .then((result) =>
+          Object.fromEntries(
+            (Array.isArray(result?.data) ? result.data : []).map((server) => [server.name, server.status]),
+          ),
+        )
     },
   })
 
@@ -148,7 +152,12 @@ export const loadMcpResourcesQuery = (
       return api.resource
         .catalog({ location: { directory } })
         .then((result) =>
-          Object.fromEntries(result.data.resources.map((resource) => [`${resource.server}:${resource.uri}`, resource])),
+          Object.fromEntries(
+            (Array.isArray(result?.data?.resources) ? result.data.resources : []).map((resource) => [
+              `${resource.server}:${resource.uri}`,
+              resource,
+            ]),
+          ),
         )
     },
     placeholderData: {},
@@ -433,13 +442,13 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     children.pin(key)
     const [store, setStore] = children.child(directory, { bootstrap: false })
     const meta = sessionMeta.get(key)
-    const retainedLimit = Math.max(store.limit, options?.limit ?? 0, meta?.limit ?? 0)
+    const retainedLimit = Math.max(store.session?.length ?? 0, options?.limit ?? 0, meta?.limit ?? 0)
     if (meta && meta.limit >= retainedLimit) {
-      const next = trimSessions(store.session, {
+      const next = trimSessions(store.session ?? [], {
         limit: retainedLimit,
         permission: session.data.permission,
       })
-      if (next.length !== store.session.length) {
+      if ((store.session ?? []).length !== next.length) {
         setStore("session", reconcile(next, { key: "id" }))
       }
       children.unpin(key)
@@ -457,8 +466,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
                 .filter((s) => !!s?.id)
                 .filter((s) => !s.time?.archived)
                 .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-              const limit = Math.max(store.limit, options?.limit ?? 0, sessionMeta.get(key)?.limit ?? 0)
-              const childSessions = store.session.filter((s) => !!s.parentID)
+              const limit = Math.max(store.session?.length ?? 0, options?.limit ?? 0, sessionMeta.get(key)?.limit ?? 0)
+              const childSessions = (store.session ?? []).filter((s) => !!s.parentID)
               const next = trimSessions([...nonArchived, ...childSessions], {
                 limit,
                 permission: session.data.permission,

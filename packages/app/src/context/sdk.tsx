@@ -1,6 +1,6 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { type Accessor, createMemo } from "solid-js"
-import { type DirectorySDK, useServerSDK } from "./server-sdk"
+import { type DirectorySDK, type ServerSDK, useServerSDK } from "./server-sdk"
 export type { DirectorySDK } from "./server-sdk"
 
 const context = createSimpleContext({
@@ -10,7 +10,7 @@ const context = createSimpleContext({
     const serverSDK = useServerSDK()
     return createMemo(() => {
       const directory = typeof props.directory === "function" ? props.directory() : props.directory
-      if (!serverSDK) return undefined as unknown as ReturnType<typeof serverSDK.ensureDirSdkContext>
+      if (!serverSDK) return undefined as unknown as ReturnType<ServerSDK["ensureDirSdkContext"]>
       return serverSDK.ensureDirSdkContext(directory)
     })
   },

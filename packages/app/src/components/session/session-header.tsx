@@ -29,8 +29,8 @@ export function SessionHeader() {
     reviewLabel: language.t("command.review.toggle"),
     reviewKeybind: reviewTooltipKeybind(command),
     reviewVisible: isDesktop(),
-    reviewOpened: view().reviewPanel.opened(),
-    onReviewToggle: () => view().reviewPanel.toggle(),
+    reviewOpened: view()?.reviewPanel?.opened?.() ?? false,
+    onReviewToggle: () => view()?.reviewPanel?.toggle?.(),
   }))
 
   const rightMount = useTitlebarRightMount()

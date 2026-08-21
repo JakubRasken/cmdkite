@@ -1079,7 +1079,7 @@ export default function Page() {
   useSessionCommands({
     session: controller,
     background: {
-      blocking: () => composer.background.blocking().length > 0,
+      blocking: () => (composer.background.blocking()?.length ?? 0) > 0,
       move: composer.background.move,
     },
     navigateMessageByOffset,

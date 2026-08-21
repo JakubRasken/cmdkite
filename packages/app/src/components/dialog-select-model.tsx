@@ -54,12 +54,12 @@ const ModelList: Component<{
   const model = props.model ?? useLocal().model
   const language = useLanguage()
 
-  const models = createMemo(() =>
-    model
-      .list()
+  const models = createMemo(() => {
+    const items = model.list()
+    return (Array.isArray(items) ? items : [])
       .filter((m) => model.visible({ modelID: m.id, providerID: m.provider.id }))
-      .filter((m) => (props.provider ? m.provider.id === props.provider : true)),
-  )
+      .filter((m) => (props.provider ? m.provider.id === props.provider : true))
+  })
 
   return (
     <List
@@ -258,12 +258,12 @@ function createModelSelectorController(input: {
   onSelect: () => void
 }) {
   const model = input.model ?? useLocal().model
-  const allModels = createMemo(() =>
-    model
-      .list()
+  const allModels = createMemo(() => {
+    const items = model.list()
+    return (Array.isArray(items) ? items : [])
       .filter((item) => model.visible({ modelID: item.id, providerID: item.provider.id }))
-      .filter((item) => (input.provider() ? item.provider.id === input.provider() : true)),
-  )
+      .filter((item) => (input.provider() ? item.provider.id === input.provider() : true))
+  })
 
   return {
     models: (search: string) => {

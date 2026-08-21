@@ -29,7 +29,7 @@ import type { State } from "./types"
 import type { ServerSession } from "../server-session"
 import { cmp, directoryKey, normalizeAgentList, normalizeProjectInfo, normalizeProviderList } from "./utils"
 import { formatServerError } from "@/utils/server-errors"
-import { QueryClient, queryOptions } from "@tanstack/solid-query"
+import { QueryClient, queryOptions, type SolidQueryOptions } from "@tanstack/solid-query"
 import { loadMcpQuery, loadMcpResourcesQuery } from "../server-sync"
 import { NormalizedProviderListResponse } from "@opencode-ai/session-ui/context"
 import { ScopedKey, type ServerScope } from "@/utils/server-scope"
@@ -79,6 +79,29 @@ function runAll(list: Array<() => Promise<unknown>>) {
   return Promise.allSettled(list.map((item) => item()))
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function normalizeConfig(value: unknown): Config {
+  if (Array.isArray(value)) {
+    const document = value.find(
+      (item): item is { info?: unknown } => isRecord(item) && item.type === "document" && "info" in item,
+    )
+    return isRecord(document?.info) ? (document.info as Config) : {}
+  }
+  if (isRecord(value) && "data" in value) return normalizeConfig(value.data)
+  return isRecord(value) ? (value as Config) : {}
+}
+
+type GlobalConfigQueryOptions = SolidQueryOptions<Config, Error, Config, readonly [ServerScope, "config"]> & {
+  queryKey: readonly [ServerScope, "config"]
+}
+
+type GlobalConfigApi = {
+  readonly config: { readonly get: () => Promise<unknown> }
+}
+
 function showErrors(input: {
   errors: unknown[]
   title: string
@@ -95,19 +118,20 @@ function showErrors(input: {
   })
 }
 
-export const loadGlobalConfigQuery = (scope: ServerScope, api?: ServerApi) =>
-  queryOptions({
-    queryKey: [scope, "config"],
+export function loadGlobalConfigQuery(scope: ServerScope, api?: GlobalConfigApi): GlobalConfigQueryOptions {
+  return queryOptions<Config, Error, Config, readonly [ServerScope, "config"]>({
+    queryKey: [scope, "config"] as const,
     queryFn: async (): Promise<Config> => {
       if (!api) return {}
       try {
         const result = await api.config.get()
-        return (result.data ?? {}) as Config
+        return normalizeConfig(result)
       } catch {
         return {}
       }
     },
   })
+}
 
 type ProjectApi = {
   readonly list: () => Promise<ProjectListOutput>
@@ -128,7 +152,7 @@ export const loadProjectsQuery = (scope: ServerScope, projects: ProjectApi, work
         projects.list().then(async (items) => {
           return (
             await Promise.all(
-              items
+              (Array.isArray(items) ? items : [])
                 .filter((project) => !!project?.id)
                 .map(async (project) => {
                   const directories = await worktrees
@@ -272,11 +296,15 @@ export const loadIntegrationsQuery = (scope: ServerScope, directory: string | nu
   queryOptions({
     queryKey: [scope, directory, "integrations"] as const,
     queryFn: () =>
-      retry(() => sdk.list(directory ? { location: { directory } } : undefined).then((result) => result.data)),
+      retry(() =>
+        sdk
+          .list(directory ? { location: { directory } } : undefined)
+          .then((result) => (Array.isArray(result?.data) ? result.data : [])),
+      ),
   })
 
 export const loadCommands = (directory: string, api: CommandListApi): Promise<CommandInfo[]> =>
-  retry(() => api.list({ location: { directory } }).then((result) => result.data))
+  retry(() => api.list({ location: { directory } }).then((result) => (Array.isArray(result?.data) ? result.data : [])))
 
 export const loadPathQuery = (scope: ServerScope, directory: string | null, api: LocationApi) =>
   queryOptions<Path>({
@@ -368,7 +396,7 @@ export async function bootstrapDirectory(input: {
       retry(() =>
         input.api.permission.request
           .list({ location: { directory: input.directory } })
-          .then((result) => result.data)
+          .then((result) => (Array.isArray(result?.data) ? result.data : []))
           .then((permissions) => {
             const ids = permissions.map((permission) => permission.sessionID)
             const grouped = groupBySession(
@@ -420,7 +448,9 @@ export async function bootstrapDirectory(input: {
   await waitForPaint()
   const slowErrs = errors(await runAll(slow))
   if (slowErrs.length > 0) {
-    console.error("Failed to finish bootstrap instance", slowErrs[0])
+    const err = slowErrs[0]
+    console.error("Failed to finish bootstrap instance", err)
+    if (err instanceof Error && err.stack) console.error("[cmdkite] bootstrap stack:", err.stack)
     const project = getFilename(input.directory)
     showToast({
       variant: "error",

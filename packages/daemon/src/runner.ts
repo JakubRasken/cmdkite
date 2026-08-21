@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
+import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { resolveCli } from "./cli.ts"
 import { createFrameParser, type Frame } from "./ndjson.ts"
@@ -19,6 +19,7 @@ export type RunOptions = {
   /** Enable writes/shell (auto-accept mode). Defaults to true for this app. */
   yolo?: boolean
   maxTurns?: number
+  agent?: string
 }
 
 export type SessionState = "idle" | "running" | "done" | "error"
@@ -30,6 +31,7 @@ export interface Session {
   prompt: string
   createdAt: number
   sessionId?: string
+  agent?: string
   stopReason?: string
   usage?: unknown
   finalText?: string
@@ -40,6 +42,16 @@ export interface Session {
 type Listener = (session: Session, frame: Frame) => void
 
 const MAX_KEEP = 200
+
+function errorMessage(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value.trim()
+  if (!value || typeof value !== "object") return
+  const record = value as Record<string, unknown>
+  const message = typeof record.message === "string" ? record.message.trim() : ""
+  if (!message) return
+  const name = typeof record.name === "string" ? record.name.trim() : ""
+  return name && !message.startsWith(`${name}:`) ? `${name}: ${message}` : message
+}
 
 export class CmdRunner {
   private sessions = new Map<string, Session>()
@@ -69,14 +81,22 @@ export class CmdRunner {
   }
 
   /** Register an idle session (no CLI run yet). The app creates sessions before prompting. */
-  create(opts: Pick<RunOptions, "cwd" | "prompt"> & { id?: string; model?: string }): Session {
+  create(opts: Pick<RunOptions, "cwd" | "prompt"> & { id?: string; model?: string; agent?: string }): Session {
     const id = opts.id ?? randomUUID()
+    const existing = this.sessions.get(id)
+    if (existing) {
+      if (opts.agent) existing.agent = opts.agent
+      if (opts.model) existing.model = opts.model
+      if (opts.prompt) existing.prompt = opts.prompt
+      return existing
+    }
     const session: Session = {
       id,
       state: "idle",
       cwd: opts.cwd,
       prompt: opts.prompt,
       createdAt: Date.now(),
+      agent: opts.agent,
       model: opts.model,
     }
     this.sessions.set(id, session)
@@ -85,11 +105,17 @@ export class CmdRunner {
   }
 
   /** Start a CLI run for an existing session. Returns false if the session is unknown. */
-  prompt(id: string, opts: Omit<RunOptions, "cwd" | "prompt"> & { prompt: string }): boolean {
-    const session = this.sessions.get(id)
-    if (!session) return false
+  prompt(id: string, opts: Omit<RunOptions, "cwd" | "prompt"> & { prompt: string; cwd?: string }): boolean {
+    const session =
+      this.sessions.get(id) ??
+      this.ensure(id, { cwd: opts.cwd, prompt: opts.prompt, model: opts.model, agent: opts.agent })
     session.state = "running"
     session.prompt = opts.prompt
+    session.error = undefined
+    session.finalText = undefined
+    session.stopReason = undefined
+    session.usage = undefined
+    if (opts.agent) session.agent = opts.agent
     if (opts.model) session.model = opts.model
     this.emit(id, session)
     this.spawnRun(id, opts)
@@ -98,10 +124,21 @@ export class CmdRunner {
 
   /** Start a CLI run for a new session (legacy path: creates then runs). */
   start(opts: RunOptions): Session {
-    const session = this.create({ cwd: opts.cwd, prompt: opts.prompt })
+    const session = this.create({ cwd: opts.cwd, prompt: opts.prompt, model: opts.model, agent: opts.agent })
     session.state = "running"
     this.spawnRun(session.id, opts)
     return session
+  }
+
+  /** Recreate a lightweight session shell when the daemon outlived the UI state. */
+  ensure(id: string, opts: { cwd?: string; prompt?: string; model?: string; agent?: string }): Session {
+    return this.create({
+      id,
+      cwd: opts.cwd ?? process.cwd(),
+      prompt: opts.prompt ?? "",
+      model: opts.model,
+      agent: opts.agent,
+    })
   }
 
   private spawnRun(id: string, opts: Omit<RunOptions, "cwd">): void {
@@ -153,6 +190,12 @@ export class CmdRunner {
         current.state = code === 0 ? "done" : "error"
         if (code !== 0 && !current.error) current.error = stderr.trim().slice(-500) || `exit code ${code}`
         this.emit(id, current)
+      } else if (current.state === "error" && (!current.error || current.error === "Command Code request failed")) {
+        const detail = stderr.trim().slice(-500)
+        if (detail) {
+          current.error = detail
+          this.emit(id, current)
+        }
       }
     })
   }
@@ -166,6 +209,12 @@ export class CmdRunner {
       session.stopReason = frame.stopReason
       session.usage = frame.usage
       session.finalText = frame.finalText
+      session.error =
+        frame.subtype === "error"
+          ? (errorMessage(frame.error) ?? errorMessage(frame.finalText) ?? "Command Code request failed")
+          : undefined
+    } else if (frame.event.type === "run_error") {
+      session.error = errorMessage(frame.event.error) ?? session.error
     }
     this.emit(id, session, frame)
   }
@@ -179,7 +228,15 @@ export class CmdRunner {
   }
 
   private emit(id: string, session: Session, frame?: Frame): void {
-    for (const listener of this.listeners) listener(session, frame ?? { type: "result", subtype: session.state === "error" ? "error" : "success", finalText: session.finalText ?? "" })
+    for (const listener of this.listeners)
+      listener(
+        session,
+        frame ?? {
+          type: "result",
+          subtype: session.state === "error" ? "error" : "success",
+          finalText: session.finalText ?? "",
+        },
+      )
   }
 
   private trimOld(): void {
